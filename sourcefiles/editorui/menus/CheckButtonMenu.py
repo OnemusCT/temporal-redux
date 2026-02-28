@@ -1,6 +1,5 @@
 from editorui.menus.BaseCommandMenu import BaseCommandMenu
 from editorui.menus.CommandError import CommandError
-from editorui.menus.ValidatingLineEdit import ValidatingLineEdit
 from eventcommand import EventCommand
 
 
@@ -31,11 +30,6 @@ class CheckButtonMenu(BaseCommandMenu):
         self.check_mode.addItem("Since Last Check")
         self.check_mode.currentIndexChanged.connect(self._validate_combination)
 
-        # Jump bytes
-        jump_label = QLabel("Jump Bytes:")
-        self.jump_bytes = ValidatingLineEdit(min_value=0, max_value=0xFF)
-        self.jump_bytes.setPlaceholderText("Enter jump distance (hex)")
-
         # Command preview
         self.preview = QLabel()
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -47,8 +41,6 @@ class CheckButtonMenu(BaseCommandMenu):
         layout.addWidget(self.button_choice)
         layout.addWidget(mode_label)
         layout.addWidget(self.check_mode)
-        layout.addWidget(jump_label)
-        layout.addWidget(self.jump_bytes)
         layout.addWidget(self.preview)
 
         result.setLayout(layout)
@@ -60,7 +52,6 @@ class CheckButtonMenu(BaseCommandMenu):
         self.check_type.currentIndexChanged.connect(self._update_preview)
         self.button_choice.currentIndexChanged.connect(self._update_preview)
         self.check_mode.currentIndexChanged.connect(self._update_preview)
-        self.jump_bytes.textChanged.connect(self._update_preview)
 
         return result
 
@@ -102,9 +93,6 @@ class CheckButtonMenu(BaseCommandMenu):
 
     def validate(self) -> bool:
         """Validate the current input"""
-        if self.jump_bytes.get_value() is None:
-            return False
-
         # Check for invalid Any + Since Last combination
         is_any = (self.check_type.currentText() == "Button" and
                  self.button_choice.currentText() == "Any")
@@ -122,17 +110,10 @@ class CheckButtonMenu(BaseCommandMenu):
         is_action = self.check_type.currentText() == "Action"
         button = self.button_choice.currentText()
         since_last = self.check_mode.currentIndex() == 1
-        jump_bytes = self.jump_bytes.get_value()
 
-        if jump_bytes is None:
-            raise CommandError("Invalid jump bytes value")
-
-        return EventCommand.check_button(is_action, button, since_last, jump_bytes)
+        return EventCommand.check_button(is_action, button, since_last, 0)
 
     def apply_arguments(self, command: int, args: list):
-        if len(args) < 1:
-            return
-
         # Map command to settings
         if command in [0x30, 0x31]:  # Action current
             self.check_type.setCurrentText("Action")
@@ -164,6 +145,3 @@ class CheckButtonMenu(BaseCommandMenu):
                 button, mode = button_map[command]
                 self.button_choice.setCurrentText(button)
                 self.check_mode.setCurrentIndex(mode)
-
-        # Set jump bytes
-        self.jump_bytes.set_value(args[0])

@@ -249,10 +249,10 @@ def loop_move_to_pc(args) -> str:
 
 
 def load_npc(args) -> str:
-    return "Load NPC ({})".format(lu.npcs[args[0]])
+    return "Load NPC ({})".format(lu.npcs.get(args[0], f"Unknown(0x{args[0]:02X})"))
 
 def load_enemy(args) -> str:
-    return "Load enemy ({})".format(lu.enemies[args[0]])
+    return "Load enemy ({})".format(lu.enemies.get(args[0], f"Unknown(0x{args[0]:02X})"))
 
 def set_npc_solid(args) -> str:
     properties = []
@@ -299,28 +299,32 @@ def vector_move(args) -> str:
     return "Move in direction {:.1f}° magnitude {:02X}".format(direction, args[1])
 
 def vector_move_from_mem(args) -> str:
+    if len(args) == 1:
+        return "Move to object {:02X}".format(args[0] // 2)
     return "Move using direction from {} magnitude from {}".format(
         address_offset(args[0]),
         address_offset(args[1])
     )
 
 def move_to_coords(args) -> str:
-    return "Move toward ({},{}) distance {:02X}".format(args[0], args[1], args[2])
+    if len(args) >= 3:
+        return "Move toward ({},{}) distance {:02X}".format(args[0], args[1], args[2])
+    return "Move toward ({},{})".format(args[0], args[1])
 
 def if_item(args) -> str:
-    return "If(!has_item({}))".format(lu.items[args[0]]),
+    return "If(!has_item({}))".format(lu.items.get(args[0], f"Unknown(0x{args[0]:02X})")),
 
 def add_item(args) -> str:
-    return "Add {}".format(lu.items[args[0]])
+    return "Add {}".format(lu.items.get(args[0], f"Unknown(0x{args[0]:02X})"))
 
 def remove_item(args) -> str:
-    return "Remove {}".format(lu.items[args[0]])
+    return "Remove {}".format(lu.items.get(args[0], f"Unknown(0x{args[0]:02X})"))
 
 def equip_item(args) -> str:
-    return "Equip {} on {}".format(lu.items[args[0]], get_pc(args[1]))
+    return "Equip {} on {}".format(lu.items.get(args[0], f"Unknown(0x{args[0]:02X})"), get_pc(args[1]))
 
 def item_quantity(args) -> str:
-    return "Get {} quantity into 0x{:02X}".format(lu.items[args[0]], args[1])
+    return "Get {} quantity into 0x{:02X}".format(lu.items.get(args[0], f"Unknown(0x{args[0]:02X})"), args[1])
 
 def goto_forward(args, curr_bytes) -> str:
     return "Goto(0x{:02X})".format(args[-1] + curr_bytes + 1)

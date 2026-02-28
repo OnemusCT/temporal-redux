@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Optional
 
-from eventcommand import get_command, EventCommand
+from eventcommand import get_command, EventCommand, Platform
 
 
 class CommandNotFoundException(Exception):
@@ -139,12 +139,13 @@ class EventFunction:
         return self.offsets.index(pos)
 
     @staticmethod
-    def from_bytearray(func_bytes: bytearray) -> EventFunction:
+    def from_bytearray(func_bytes: bytearray,
+                       platform: Platform = Platform.SNES) -> EventFunction:
         ret = EventFunction()
 
         pos = 0
         while pos < len(func_bytes):
-            cmd = get_command(func_bytes, pos)
+            cmd = get_command(func_bytes, pos, platform)
             ret.add(cmd)
             pos += len(cmd)
 

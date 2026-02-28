@@ -3,29 +3,30 @@ from PyQt6.QtCore import QAbstractItemModel, QModelIndex, Qt, QMimeData
 from eventcommand import EventCommand
 import editorui.commandtotext as c2t
 from editorui.commanditem import CommandItem, process_script
-from ctrom import CTRom
+from gamebackend import GameBackend
 
 class CommandModel(QAbstractItemModel):
-    def __init__(self, root_item: CommandItem, parent=None, ct_rom: CTRom=None, location_id: int=None):
+    def __init__(self, root_item: CommandItem, parent=None, backend: GameBackend=None, location_id: int=None):
         super().__init__(parent)
         self._root_item = root_item
-        self._ct_rom = ct_rom
+        self._backend = backend
         self._location_id = location_id
+
+    def set_backend(self, backend: GameBackend) -> None:
+        self._backend = backend
 
     def update_command(self, item: CommandItem, new_command: EventCommand):
         """Update an item's command and adjust subsequent addresses based on command size change"""
-        print("Updating")
-        if self._ct_rom is not None:
-            script = self._ct_rom.script_manager.get_script(self._location_id)
+        if self._backend is not None:
+            script = self._backend.get_script(self._location_id)
             script.replace_command(item.command, new_command, item.address, item.address + len(item.command))
         # Calculate size difference
         old_size = len(item.command) if item.command else 0
         new_size = len(new_command)
         size_diff = new_size - old_size
-        
+
         # Get the model index for this item
         item_index = self.get_index_for_item(item)
-        print(item_index.internalPointer().command)
         
         # Handle promotion of children if changing from conditional to non-conditional command
         if item.command.command in EventCommand.conditional_commands and new_command.command not in EventCommand.conditional_commands:
@@ -86,7 +87,10 @@ class CommandModel(QAbstractItemModel):
             self.createIndex(item_index.row(), 1, item),
             [Qt.ItemDataRole.DisplayRole]
         )
-        
+
+        self._recalculate_jump_bytes(item)
+        self._recalculate_ancestor_jumps(item)
+
         if size_diff != 0:  # Only update addresses if size changed
             # Get all items that come after this one
             self._update_jump_parameters(item, size_diff)
@@ -105,8 +109,8 @@ class CommandModel(QAbstractItemModel):
         Returns:
             bool: True if insertion was successful
         """
-        if self._ct_rom is not None:
-            script = self._ct_rom.script_manager.get_script(self._location_id)
+        if self._backend is not None:
+            script = self._backend.get_script(self._location_id)
             script.insert_commands(command.to_bytearray(), address)
         parent_item = self._root_item if not parent_index.isValid() else parent_index.internalPointer()
         
@@ -127,6 +131,7 @@ class CommandModel(QAbstractItemModel):
         # Update addresses of all subsequent commands
         command_size = len(command)
         self._update_jump_parameters(new_item, command_size, True)
+        self._recalculate_ancestor_jumps(new_item)
         self._update_addresses(new_item, command_size, True)
         
         # End insertion process
@@ -151,16 +156,11 @@ class CommandModel(QAbstractItemModel):
         if parent_item is None:
             return False
         
-        if self._ct_rom is not None:
-            script = self._ct_rom.script_manager.get_script(self._location_id)
+        if self._backend is not None:
+            script = self._backend.get_script(self._location_id)
             script.delete_commands(index.internalPointer().address)
-            
-        # Get size of command being deleted for address adjustment
+
         command_size = len(item.command) if item.command else 0
-        
-        # Get items that will need address updates before deleting
-        
-        # Get parent index for beginRemoveRows
         parent_index = self.parent(index)
         
         # Handle children of deleted item if it's a conditional command
@@ -187,6 +187,7 @@ class CommandModel(QAbstractItemModel):
         
         item = index.internalPointer()
         self._update_jump_parameters(item, -command_size)
+        self._recalculate_ancestor_jumps(item)
         self._update_addresses(item, -command_size)
         return True
 
@@ -557,7 +558,7 @@ class CommandModel(QAbstractItemModel):
         all_commands = _get_all_commands(self._root_item)
         seen_modified = False
         for item in all_commands:
-            if item.command and item.command.command in EventCommand.fwd_jump_commands:
+            if item.command and item.command.command in EventCommand.fwd_jump_commands and item.command.command not in EventCommand.conditional_commands:
                 jump_target = item.address + item.command.args[-1]
                 if item.command.command != 0x10:
                     jump_target += len(item.command)
@@ -596,9 +597,31 @@ class CommandModel(QAbstractItemModel):
             if item.address == modified_item.address:
                 seen_modified = True
 
+    def _recalculate_jump_bytes(self, item: CommandItem) -> None:
+        if item.command is None or item.command.command not in EventCommand.conditional_commands:
+            return
+        total = sum(
+            len(d.command) for d in _get_all_commands(item)[1:]
+            if d.command is not None
+        )
+        item.command.args[-1] = total
+        item_index = self.get_index_for_item(item)
+        self.dataChanged.emit(
+            self.createIndex(item_index.row(), 0, item),
+            self.createIndex(item_index.row(), 1, item),
+            [Qt.ItemDataRole.DisplayRole]
+        )
+
+    def _recalculate_ancestor_jumps(self, item: CommandItem) -> None:
+        current = item.parent
+        while current is not None and current != self._root_item:
+            if current.command is not None and current.command.command in EventCommand.conditional_commands:
+                self._recalculate_jump_bytes(current)
+            current = current.parent
+
     def change_location(self, location_id: int):
         self._location_id = location_id
-        items = process_script(self._ct_rom.script_manager.get_script(location_id))
+        items = process_script(self._backend.get_script(location_id))
         new_root = CommandItem(name="Root", children=items)
         self.replace_items(new_root)
 

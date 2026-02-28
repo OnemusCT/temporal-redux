@@ -15,6 +15,50 @@ class FuncSync(Enum):
     SYNC = auto()
 
 
+class Platform(IntEnum):
+    '''Target platform for event script decoding.'''
+    SNES = 0
+    PC = 1
+
+
+# Opcodes whose argument sizes differ between SNES and PC.
+# Maps opcode byte → arg_lens list for the PC version.
+_PC_ARG_LENS_OVERRIDES: dict[int, list[int]] = {
+    # Textbox: string index is u16 on PC (u8 on SNES)
+    0xBB: [2],
+    0xC0: [2, 1],
+    0xC1: [2],
+    0xC2: [2],
+    0xC3: [2, 1],
+    0xC4: [2, 1],
+    # ChangeLocation: PC adds a separate facing byte after the scene u16
+    0xDC: [2, 1, 1, 1],
+    0xDD: [2, 1, 1, 1],
+    0xDE: [2, 1, 1, 1],
+    0xDF: [2, 1, 1, 1],
+    0xE0: [2, 1, 1, 1],
+    0xE1: [2, 1, 1, 1],
+    # LoadEnemy: enemy index is u16 on PC
+    0x83: [2, 1],
+    # JumpIfHasItem: item index is u16 on PC
+    0xC9: [2, 1],
+    # EquipPC: extra category byte on PC
+    0xD5: [1, 1, 1],
+    # SetStringTable: PC stores table index u8 (not a 24-bit ROM address)
+    0xB8: [1],
+    # PC-only extended-memory ops (SNES aliases these to 0-arg unknown 0x01)
+    0x3A: [1, 1],   # Copy8  immediate → extended-mem slot
+    0x3D: [1, 1],   # Copy8  local mem → extended-mem slot
+    0x3E: [1, 1],   # Copy8  extended-mem slot → local mem
+    0x45: [1, 1],   # BitSet   on extended-mem slot
+    0x46: [1, 1],   # BitClear on extended-mem slot
+    0x6E: [1, 1, 1, 1],  # JumpIfExtended8: lhs_ext, rhs_val, cmp_op, jump_off
+    0x70: [1, 1],   # Copy8  party_slot[idx] → local mem
+    0x74: [1, 1],   # Copy16 extended-mem slot → local mem
+    0x78: [1, 1],   # Copy16 local mem → extended-mem slot
+}
+
+
 class Operation(IntEnum):
     '''Enum of operations permitted in event commands'''
     EQUALS = 0
@@ -3650,22 +3694,28 @@ event_commands[0xFF] = \
 
 
 
-def get_command(buf: bytes, offset: int = 0) -> EventCommand:
+def get_command(buf: bytes, offset: int = 0,
+                platform: Platform = Platform.SNES) -> EventCommand:
 
     command_id = buf[offset]
     command = event_commands[command_id].copy()
 
-    # print(command)
-    # input()
+    # Apply PC-specific argument-length overrides before mode-based fixups.
+    if platform == Platform.PC and command_id in _PC_ARG_LENS_OVERRIDES:
+        command.arg_lens = _PC_ARG_LENS_OVERRIDES[command_id][:]
+        command.num_args = len(command.arg_lens)
 
     if command_id == 0x2E:
         mode = buf[offset+1] >> 4
         if mode in [4, 5]:
             command.arg_lens = [1, 1, 1, 1, 1]
         elif mode == 8:
-            copy_len = get_value_from_bytes(buf[offset+3:offset+4]) - 2
-            print(copy_len)
-            command.arg_lens = [1, 1, 2, copy_len]
+            if platform == Platform.PC:
+                # PC: cmd byte + bits byte + palette-index byte = 3 args
+                command.arg_lens = [1, 1, 1]
+            else:
+                copy_len = get_value_from_bytes(buf[offset+3:offset+4]) - 2
+                command.arg_lens = [1, 1, 2, copy_len]
         else:
             print(f"{command_id:02X}: Error, Unknown Mode")
     elif command_id == 0x4E:
@@ -3681,9 +3731,13 @@ def get_command(buf: bytes, offset: int = 0) -> EventCommand:
         elif mode in [4, 5]:
             command.arg_lens = [1, 1, 1, 1]
         elif mode == 8:
-            # bytes to copy follow command
-            copy_len = buf[offset+2] - 2
-            command.arg_lens = [1, 1, 1, copy_len]
+            if platform == Platform.PC:
+                # PC: cmd byte + palette-index byte = 2 args
+                command.arg_lens = [1, 1]
+            else:
+                # SNES: variable-length copy; length encoded in third byte
+                copy_len = buf[offset+2] - 2
+                command.arg_lens = [1, 1, 1, copy_len]
         else:
             print(f"{command_id:02X}: Error, Unknown Mode")
     elif command_id == 0xF1:

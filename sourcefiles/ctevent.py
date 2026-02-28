@@ -9,7 +9,7 @@ from ctenums import LocID
 from byteops import get_value_from_bytes, to_little_endian, to_file_ptr, \
     to_rom_ptr
 import ctstrings
-from eventcommand import EventCommand as EC, get_command
+from eventcommand import EventCommand as EC, get_command, Platform
 from eventfunction import EventFunction as EF
 from freespace import FSRom, FSWriteType
 
@@ -116,6 +116,7 @@ class Event:
 
         self.modified_strings = False
         self.strings = []
+        self.platform: Platform = Platform.SNES
 
     def get_bytearray(self) -> bytearray:
         return bytearray([self.num_objects]) + self.data
@@ -232,6 +233,18 @@ class Event:
 
         return ret_event
 
+    @staticmethod
+    def from_pc_data(raw: bytes) -> Event:
+        # PC Atel_*.dat layout is identical to SNES: count byte + pointer table + bytecode.
+        # Pointers are already in SNES convention so raw[1:] can be used verbatim.
+        ret_event = Event()
+        ret_event.num_objects = raw[0]
+        ret_event.data = bytearray(raw[1:])
+        ret_event.platform = Platform.PC
+        ret_event.strings = []
+        ret_event.modified_strings = False
+        return ret_event
+
     def print_fn_starts(self):
         for i in range(self.num_objects):
             print(f"Object {i:02X}")
@@ -245,7 +258,7 @@ class Event:
         end = self.get_object_end(i)
         commands = []
         while pos < end:
-            cmd = get_command(self.data, pos)
+            cmd = get_command(self.data, pos, self.platform)
             commands.append(cmd)
             pos += len(cmd)
         return commands
@@ -272,7 +285,7 @@ class Event:
             indent = "\t"
             indent_end = 0
             while pos < end:
-                cmd = get_command(self.data, pos)
+                cmd = get_command(self.data, pos, self.platform)
                 if pos > indent_end:
                     indent = "\t" 
                     indent_end = 0
@@ -306,12 +319,12 @@ class Event:
                              f"(max {self.num_objects-1:02X}")
 
         pos = self.get_object_start(obj_id)
-        end = self.get_object_end(obj_id)
+        end = min(self.get_object_end(obj_id), len(self.data))
 
         string_indices = set()
 
         while pos < end:
-            cmd = get_command(self.data, pos)
+            cmd = get_command(self.data, pos, self.platform)
 
             if cmd.command in EC.str_commands:
                 string_indices.add(cmd.args[0])
@@ -321,6 +334,7 @@ class Event:
         ret_dict = {
             index: bytearray(self.strings[index])
             for index in string_indices
+            if index < len(self.strings)
         }
 
         return ret_dict
@@ -329,12 +343,12 @@ class Event:
     def get_string_index(self):
 
         start = self.get_function_start(0, 0)
-        end = self.get_object_end(0)
+        end = min(self.get_object_end(0), len(self.data))
 
         pos = start
         found = False
         while pos < end:
-            cmd = get_command(self.data, pos)
+            cmd = get_command(self.data, pos, self.platform)
 
             if cmd.command == 0xB8:
                 string_index = cmd.args[0]
@@ -374,7 +388,7 @@ class Event:
 
         str_pos = None
         while pos < len(self.data):
-            cmd = get_command(self.data, pos)
+            cmd = get_command(self.data, pos, self.platform)
 
             if cmd.command == 0xB8:
                 str_pos = cmd.args[0]
@@ -395,7 +409,7 @@ class Event:
 
         pos = self.get_object_start(0)
         while pos < len(self.data):
-            cmd = get_command(self.data, pos)
+            cmd = get_command(self.data, pos, self.platform)
 
             if cmd.command in EC.str_commands:
                 # string index argument is 0th arg
@@ -477,7 +491,7 @@ class Event:
         start = self.get_function_start(obj_id, func_id)
         end = self.get_function_end(obj_id, func_id)
 
-        return EF.from_bytearray(self.data[start:end])
+        return EF.from_bytearray(self.data[start:end], self.platform)
 
     # This isn't what I want/what is needed.  Avoid.
     # def get_object(self, obj_id: int) -> bytearray:
@@ -1001,7 +1015,7 @@ class Event:
 
         pos = start_pos
         while pos < end_pos:
-            cmd = get_command(self.data, pos)
+            cmd = get_command(self.data, pos, self.platform)
 
             if cmd.command in cmd_ids:
                 return (pos, cmd)
@@ -1047,7 +1061,7 @@ class Event:
 
         pos = start_pos
         while pos < end_pos:
-            cmd = get_command(self.data, pos)
+            cmd = get_command(self.data, pos, self.platform)
 
             if cmd == find_cmd:
                 return pos
@@ -1224,7 +1238,7 @@ class Event:
                 print("Error: Deleting out of script's range.")
                 raise ValueError
 
-            cmd = get_command(self.data, pos)
+            cmd = get_command(self.data, pos, self.platform)
             cmd_len += len(cmd)
             pos += len(cmd)
 
@@ -1240,7 +1254,6 @@ class Event:
         del self.data[del_pos:del_pos+cmd_len]
 
     def delete_commands_range(self, del_start_pos: int, del_end_pos: int):
-        print("Deleting {:02X}-{:02X}".format(del_start_pos, del_end_pos))
         if del_start_pos > del_end_pos:
             raise ValueError("Start after end.")
 
@@ -1248,8 +1261,7 @@ class Event:
         length_to_delete = del_end_pos - del_start_pos
         deleted_length = 0
         while deleted_length < length_to_delete:
-            cmd = get_command(self.data, pos)
-            print("Deleting {}".format(cmd))
+            cmd = get_command(self.data, pos, self.platform)
             self.delete_commands(pos)
             deleted_length += len(cmd)
 
@@ -1262,7 +1274,7 @@ class Event:
         if cmd_id not in EC.fwd_jump_commands:
             raise ValueError("Position does not point to a jump")
 
-        cmd = get_command(self.data, pos)
+        cmd = get_command(self.data, pos, self.platform)
         jump_bytes = cmd.args[-1]
         target = pos + jump_bytes + len(cmd) - 1
 
@@ -1274,7 +1286,7 @@ class Event:
         if cmd_id not in EC.fwd_jump_commands:
             raise ValueError("Position does not point to a jump")
 
-        cmd = get_command(self.data, pos)
+        cmd = get_command(self.data, pos, self.platform)
         jump_bytes = cmd.args[-1]
         target = pos + jump_bytes + len(cmd) - 1
 

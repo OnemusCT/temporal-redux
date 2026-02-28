@@ -1,36 +1,102 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import ByteString, Optional
+from typing import Optional
 from dataclasses import dataclass
-import sys 
+import sys
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, 
+    QApplication, QMainWindow, QWidget,
     QComboBox, QPushButton, QLabel, QGridLayout,
-    QVBoxLayout, QHBoxLayout, QFileDialog
+    QVBoxLayout, QHBoxLayout, QFileDialog, QDialog
 )
 from PyQt6.QtCore import Qt, pyqtSlot
 
-from base import basepatch
-from ctrom import CTRom
-import ctevent
+from gamebackend import GameBackend, SnesBackend
+from pcbackend import PcBackend
 from eventcommand import EventCommand, event_commands
 from editorui.commandgroups import event_command_groupings, EventCommandType, EventCommandSubtype
 import editorui.commandmenus as cm
 from editorui.commanditemmodel import CommandModel
 from editorui.commandtreeview import CommandTreeView
 from editorui.commanditem import CommandItem, process_script
-from editorui.lookups import locations
 from editorui.menus.BaseCommandMenu import BaseCommandMenu
 from editorui.menus.UnassignedMenu import UnassignedMenu
+
+def _open_file_or_directory(parent=None) -> Optional[Path]:
+    """
+    Show a small dialog letting the user pick either a file (SNES ROM /
+    resources.bin) or an extracted PC data directory.  Returns the chosen
+    Path, or None if the dialog was canceled.
+    """
+    dialog = QDialog(parent)
+    dialog.setWindowTitle("Open")
+    dialog.setMinimumWidth(340)
+    result: Optional[Path] = None
+
+    layout = QVBoxLayout(dialog)
+    layout.addWidget(QLabel("Open a Chrono Trigger file or extracted PC data directory:"))
+
+    btn_file = QPushButton("Open File  (ROM / resources.bin)…")
+    btn_dir  = QPushButton("Open Directory  (extracted PC data)…")
+    btn_cancel = QPushButton("Cancel")
+
+    layout.addWidget(btn_file)
+    layout.addWidget(btn_dir)
+    layout.addWidget(btn_cancel)
+
+    def pick_file():
+        nonlocal result
+        filename, _ = QFileDialog.getOpenFileName(
+            dialog,
+            "Open File",
+            "",
+            "Chrono Trigger Files (*.smc *.sfc *.bin)"
+            ";;SNES ROM Files (*.smc *.sfc)"
+            ";;PC Archive (*.bin)"
+            ";;All Files (*.*)",
+        )
+        if filename:
+            result = Path(filename)
+            dialog.accept()
+
+    def pick_dir():
+        nonlocal result
+        directory = QFileDialog.getExistingDirectory(dialog, "Open PC Data Directory")
+        if directory:
+            result = Path(directory)
+            dialog.accept()
+
+    btn_file.clicked.connect(pick_file)
+    btn_dir.clicked.connect(pick_dir)
+    btn_cancel.clicked.connect(dialog.reject)
+
+    dialog.exec()
+    return result
+
+
+def detect_backend(path: Path) -> GameBackend:
+    """
+    Detect the correct backend for a given path.
+
+    - .smc / .sfc  → SnesBackend
+    - .bin         → PcBackend (resources.bin archive)
+    - directory    → PcBackend (extracted PC data directory)
+    """
+    if path.is_dir():
+        return PcBackend(path)
+    suffix = path.suffix.lower()
+    if suffix in ('.smc', '.sfc'):
+        return SnesBackend.from_path(path)
+    if suffix == '.bin':
+        return PcBackend(path)
+    raise ValueError(f"Unrecognised file type: {path}")
+
 
 @dataclass
 class ViewerState:
     """Holds the current state of the viewer"""
-    current_command: Optional[EventCommand] = None 
+    current_command: Optional[EventCommand] = None
     current_address: Optional[int] = None
-    script: Optional[ctevent.Event] = None
-    rom_data: Optional[ByteString] = None
-    ct_rom: Optional[CTRom] = None
+    backend: Optional[GameBackend] = None
     selected_items: list[CommandItem] = None
     file: Path = None
 
@@ -40,30 +106,30 @@ class ViewerState:
 class EventViewer(QMainWindow):
     def __init__(self, rom_path: Path):
         super().__init__()
-        rom = CTRom(rom_path.read_bytes(), True)
-        basepatch.mark_initial_free_space(rom)
-        
+        backend = detect_backend(rom_path)
+
         self.state = ViewerState(
-            rom_data=rom_path.read_bytes(),
-            script=rom.script_manager.get_script(0x10f),
             file=rom_path,
-            ct_rom=rom
+            backend=backend,
         )
         self.setWindowFlags(Qt.WindowType.Window)
         self.setup_ui()
         self.on_location_changed(0)
         self._clipboard_data = None
-    
+
     def load_state(self, rom_path: Path):
-        rom = CTRom(rom_path.read_bytes(), True)
-        basepatch.mark_initial_free_space(rom)
-        
+        try:
+            backend = detect_backend(rom_path)
+        except ValueError as e:
+            print(f"Error loading file: {e}")
+            return
+
         self.state = ViewerState(
-            rom_data=rom_path.read_bytes(),
-            script=rom.script_manager.get_script(0x10f),
             file=rom_path,
-            ct_rom=rom
+            backend=backend,
         )
+        self.model.set_backend(backend)
+        self._populate_location_selector()
         self.on_location_changed(0)
 
     def create_menu_bar(self):
@@ -72,9 +138,9 @@ class EventViewer(QMainWindow):
         
         file_menu = menubar.addMenu("File")
         
-        open_action = file_menu.addAction("Open")
+        open_action = file_menu.addAction("Open…")
         open_action.triggered.connect(self.on_open)
-        
+
         save_action = file_menu.addAction("Save")
         save_action.triggered.connect(self.on_save)
         
@@ -96,21 +162,17 @@ class EventViewer(QMainWindow):
         paste_action.triggered.connect(self.on_paste)
 
     def on_open(self):
-        """Handle Open menu action"""
-        filename, _ = QFileDialog.getOpenFileName(
-            self,
-            "Open ROM File",
-            "",
-            "SNES ROM Files (*.smc *.sfc);;All Files (*.*)"
-        )
-        if filename:
-            new_rom = Path(filename)
-            self.load_state(new_rom)
-            
+        """Handle Open menu action (SNES ROM, resources.bin, or extracted directory)"""
+        path = _open_file_or_directory(self)
+        if path:
+            self.load_state(path)
 
     def on_save(self):
         """Handle Save menu action"""
-        self.state.ct_rom.script_manager.write_script_to_rom(self.location_selector.currentData())
+        if self.state.backend.is_read_only:
+            print("Save not supported for this file type.")
+            return
+        self.state.backend.write_script(self.location_selector.currentData())
         is_match, discrepancies = self.compare_tree_with_script()
         if not is_match:
             print("Tree discrepancies found:")
@@ -118,19 +180,24 @@ class EventViewer(QMainWindow):
                 print(f"- {d}")
             print("Save cancelled")
             return
-        self.state.file.write_bytes(self.state.ct_rom.rom_data.getvalue())
-
+        self.state.backend.save_to_file(self.state.file)
 
     def on_save_as(self):
         """Handle Save As menu action"""
-        filename, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save As",
-            "",
-            "SNES ROM Files (*.smc *.sfc);;All Files (*.*)"
-        )
-        if filename:
-            self.state.ct_rom.script_manager.write_script_to_rom(self.location_selector.currentData())
+        if self.state.backend.is_read_only:
+            print("Save not supported for this file type.")
+            return
+        if self.state.backend.platform == 'pc':
+            dest = QFileDialog.getExistingDirectory(self, "Save As (choose destination directory)")
+        else:
+            dest, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save As",
+                "",
+                "SNES ROM Files (*.smc *.sfc);;All Files (*.*)"
+            )
+        if dest:
+            self.state.backend.write_script(self.location_selector.currentData())
             is_match, discrepancies = self.compare_tree_with_script()
             if not is_match:
                 print("Tree discrepancies found:")
@@ -138,9 +205,7 @@ class EventViewer(QMainWindow):
                     print(f"- {d}")
                 print("Save cancelled")
                 return
-            path = Path(filename)
-            path.write_bytes(self.state.ct_rom.rom_data.getvalue())
-            #print(f"Selected file: {filename}")
+            self.state.backend.save_to_file(Path(dest))
 
     def on_copy(self):
         """Handle Copy menu action"""
@@ -326,9 +391,16 @@ class EventViewer(QMainWindow):
     def create_location_selector(self):
         """Create the location selection dropdown"""
         self.location_selector = QComboBox()
-        for loc_id, name in locations:
-            self.location_selector.addItem(name, loc_id)
+        self._populate_location_selector()
         self.location_selector.currentIndexChanged.connect(self.on_location_changed)
+
+    def _populate_location_selector(self):
+        """Populate the location selector from the current backend's location list."""
+        self.location_selector.blockSignals(True)
+        self.location_selector.clear()
+        for loc_id, name in self.state.backend.get_location_list():
+            self.location_selector.addItem(name, loc_id)
+        self.location_selector.blockSignals(False)
 
     def create_command_tree(self):
         """Create the command tree view"""
@@ -338,7 +410,7 @@ class EventViewer(QMainWindow):
         self.tree.setTreePosition(1)
         
         root = CommandItem("Root")
-        self.model = CommandModel(root_item=root, ct_rom=self.state.ct_rom, location_id=0x10F)
+        self.model = CommandModel(root_item=root, backend=self.state.backend, location_id=0x10F)
         self.tree.setModel(self.model)
         self.tree.selectionModel().selectionChanged.connect(self.on_command_selected)
 
@@ -613,7 +685,7 @@ class EventViewer(QMainWindow):
         """
         current_tree_root = self.model._root_item
         
-        processed_items = process_script(self.state.ct_rom.script_manager.get_script(self.location_selector.currentData()))
+        processed_items = process_script(self.state.backend.get_script(self.location_selector.currentData()))
         
         discrepancies = []
         is_match = self._compare_items(current_tree_root.children, processed_items, [], discrepancies)
@@ -621,32 +693,29 @@ class EventViewer(QMainWindow):
         return is_match, discrepancies
 
 def main():
-   app = QApplication(sys.argv)
-   
-   input_file = None
-   if len(sys.argv) > 1 and sys.argv[1] == "--input-file":
-       if len(sys.argv) != 3:
-           print("Usage: eventviewer.py --input-file <rom_path>")
-           sys.exit(1)
-       input_file = Path(sys.argv[2])
-   else:
-       filename, _ = QFileDialog.getOpenFileName(
-           None, 
-           "Open ROM File",
-           "",
-           "SNES ROM Files (*.smc *.sfc);;All Files (*.*)"
-       )
-       if filename:
-           input_file = Path(filename) 
-       else:
-           sys.exit()
+    app = QApplication(sys.argv)
 
-   if not input_file.exists():
-       raise FileNotFoundError("Invalid input file path.")
+    input_file = None
+    if len(sys.argv) > 1 and sys.argv[1] == "--input-file":
+        if len(sys.argv) != 3:
+            print("Usage: temporalredux.py --input-file <path>")
+            sys.exit(1)
+        input_file = Path(sys.argv[2])
+    else:
+        input_file = _open_file_or_directory()
+        if input_file is None:
+            sys.exit()
 
-   window = EventViewer(input_file)
-   window.show()
-   app.exec()
+    if not input_file.exists():
+        raise FileNotFoundError(f"Path not found: {input_file}")
+
+    try:
+        window = EventViewer(input_file)
+    except ValueError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+    window.show()
+    app.exec()
 
 if __name__ == "__main__":
     main()

@@ -19,24 +19,12 @@ class ItemMenu(BaseCommandMenu):
         item_label = QLabel("Item ID")
         self.item_id = ValidatingLineEdit(min_value=0, max_value=0xFF)
 
-        jump_label = QLabel("Jump Bytes (for Check)")
-        self.jump_bytes = ValidatingLineEdit(min_value=0, max_value=0xFF)
-
-        self.mode.currentIndexChanged.connect(self._on_mode_changed)
-
         layout.addWidget(self.mode)
         layout.addWidget(item_label)
         layout.addWidget(self.item_id)
-        layout.addWidget(jump_label)
-        layout.addWidget(self.jump_bytes)
 
         result.setLayout(layout)
-        self._on_mode_changed(0)  # Initialize state
         return result
-
-    def _on_mode_changed(self, index):
-        # Only show jump bytes for check mode
-        self.jump_bytes.setEnabled(index == 2)
 
     def get_command(self) -> EventCommand:
         try:
@@ -47,8 +35,7 @@ class ItemMenu(BaseCommandMenu):
             elif mode == 1:
                 return EventCommand.remove_item(item_id)
             else:
-                jump_bytes = int(self.jump_bytes.text(), 16)
-                return EventCommand.check_item(item_id, jump_bytes)
+                return EventCommand.check_item(item_id, 0)
         except ValueError:
             print("ERROR")
 
@@ -61,5 +48,3 @@ class ItemMenu(BaseCommandMenu):
                 self.mode.setCurrentIndex(1)
             elif command == 0xC9:
                 self.mode.setCurrentIndex(2)
-                if len(args) > 1:
-                    self.jump_bytes.setText(f"{args[1]:02X}")

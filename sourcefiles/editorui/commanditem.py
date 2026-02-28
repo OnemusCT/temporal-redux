@@ -39,17 +39,27 @@ def process_script(script: ctevent.Event) -> list[CommandItem]:
     result = []
     for i in range(script.num_objects):
         object_item = CommandItem(f"Object {i:02X}")
-        obj_strings = script.get_obj_strings(i)
-        
+
         for num, function in enumerate(script.get_all_fuctions(i)):
             func_start = script.get_function_start(i, num)
             if num > 2 and script.get_function_start(i, num) == script.get_function_start(i, num-1):
                 break
-                
+
             func_name = _get_function_name(num)
             func_item = CommandItem(func_name)
-            
-            children, _ = _create_command_list(function.commands, obj_strings, func_start)
+
+            # Build string lookup from the actual commands in this function.
+            # Using get_obj_strings would miss strings in commands that fall
+            # outside the object's byte range (get_function_end can reach past
+            # get_object_end), causing false "ERROR" display for textboxes.
+            func_strings = {
+                cmd.args[0]: bytearray(script.strings[cmd.args[0]])
+                for cmd in function.commands
+                if cmd.command in EventCommand.str_commands
+                and cmd.args[0] < len(script.strings)
+            }
+
+            children, _ = _create_command_list(function.commands, func_strings, func_start)
             for child in children:
                 child.parent = func_item
             func_item.add_children(children)
