@@ -2,9 +2,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-import ctevent
-from ctrom import CTRom
-from base import basepatch
+from sourcefiles.jetsoftime import ctevent
+from sourcefiles.jetsoftime.ctrom import CTRom
+from sourcefiles.jetsoftime.base import basepatch
 
 
 class GameBackend(ABC):

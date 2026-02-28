@@ -12,7 +12,7 @@ from PyQt6.QtCore import Qt, pyqtSlot
 
 from gamebackend import GameBackend, SnesBackend
 from pcbackend import PcBackend
-from eventcommand import EventCommand, event_commands
+from jetsoftime.eventcommand import EventCommand, event_commands
 from editorui.commandgroups import event_command_groupings, EventCommandType, EventCommandSubtype
 import editorui.commandmenus as cm
 from editorui.commanditemmodel import CommandModel

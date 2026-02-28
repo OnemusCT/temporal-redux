@@ -1,5 +1,5 @@
 from editorui.menus.BaseCommandMenu import BaseCommandMenu
-from eventcommand import EventCommand, event_commands
+from jetsoftime.eventcommand import EventCommand, event_commands
 
 
 from PyQt6.QtWidgets import QWidget

@@ -2,7 +2,7 @@ from __future__ import annotations
 import math
 from typing import Tuple
 
-from byteops import to_little_endian, get_value_from_bytes
+from .byteops import to_little_endian, get_value_from_bytes
 from enum import Enum, IntEnum, auto
 from editorui.commandgroups import EventCommandType, EventCommandSubtype
 

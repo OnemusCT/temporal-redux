@@ -1,10 +1,10 @@
 '''Module to turn a vanilla CT Rom into an open world one...eventually'''
 from typing import Optional
-from asm import instructions as inst, assemble
+from ..asm import instructions as inst, assemble
 
-import byteops
-import ctrom
-import freespace
+from .. import byteops
+from .. import ctrom
+from .. import freespace
 
 
 def apply_mauron_enemy_tech_patch(

@@ -1,5 +1,5 @@
-from eventcommand import Operation, EventCommand
-from ctstrings import CTString
+from jetsoftime.eventcommand import Operation, EventCommand
+from jetsoftime.ctstrings import CTString
 import editorui.lookups as lu
 
 def command_to_text(command: EventCommand, bytes: int, strings: dict[int, bytearray]) -> str:

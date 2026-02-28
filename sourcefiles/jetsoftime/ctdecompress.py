@@ -1,5 +1,5 @@
 # Copied from Gieger's (Michael Springer, evilpeer@hotmail.com) C version
-from byteops import get_value_from_bytes, to_little_endian
+from .byteops import get_value_from_bytes, to_little_endian
 from typing import ByteString
 
 # ctcompress is the fast C library.  If it's not present, use the python

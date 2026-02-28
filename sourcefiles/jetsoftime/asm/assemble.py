@@ -5,10 +5,10 @@ import typing
 from dataclasses import dataclass
 from typing import Union
 
-from asm import instructions as inst
-from asm.instructions import _BranchInstruction, _NormalInstruction
+from . import instructions as inst
+from .instructions import _BranchInstruction, _NormalInstruction
 
-import byteops
+from .. import byteops
 
 Instruction = Union[_BranchInstruction, _NormalInstruction]
 ASMList = typing.List[Union[Instruction, str]]

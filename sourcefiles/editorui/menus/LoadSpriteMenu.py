@@ -1,6 +1,6 @@
 from editorui.menus.BaseCommandMenu import BaseCommandMenu
 from editorui.menus.ValidatingLineEdit import ValidatingLineEdit
-from eventcommand import EventCommand
+from jetsoftime.eventcommand import EventCommand
 from editorui.lookups import npcs, enemies, pcs
 
 from PyQt6.QtWidgets import QCheckBox, QComboBox, QLabel, QVBoxLayout, QWidget

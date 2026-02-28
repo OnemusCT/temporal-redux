@@ -1,6 +1,6 @@
 from editorui.menus.BaseCommandMenu import BaseCommandMenu
 from editorui.menus.ValidatingLineEdit import ValidatingLineEdit
-from eventcommand import EventCommand, event_commands
+from jetsoftime.eventcommand import EventCommand, event_commands
 
 from PyQt6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget
 from PyQt6.QtGui import QValidator

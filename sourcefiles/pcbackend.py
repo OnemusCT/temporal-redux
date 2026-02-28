@@ -4,12 +4,10 @@ import shutil
 import struct
 from pathlib import Path
 
-import ctevent
-import ctstrings
+from sourcefiles.jetsoftime import ctevent, ctstrings
 from gamebackend import GameBackend
 from pcgamedata import (
     GameData,
-    read_scene_header,
     read_scene_script_raw,
     load_string_table,
     discover_msg_prefix,

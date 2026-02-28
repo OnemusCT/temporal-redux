@@ -2,7 +2,7 @@ import unittest
 from PyQt6.QtCore import QModelIndex, Qt
 from editorui.commanditem import CommandItem
 from editorui.commanditemmodel import CommandModel, print_command_tree
-from eventcommand import EventCommand, event_commands, FuncSync
+from jetsoftime.eventcommand import EventCommand, event_commands, FuncSync
 
 class TestCommandModel(unittest.TestCase):
     def setUp(self):

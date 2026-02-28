@@ -4,7 +4,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Tuple, Union
 
-import byteops
+from . import byteops
 
 class FreeSpaceError(Exception):
     pass

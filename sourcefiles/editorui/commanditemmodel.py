@@ -1,6 +1,6 @@
 from __future__ import annotations
 from PyQt6.QtCore import QAbstractItemModel, QModelIndex, Qt, QMimeData
-from eventcommand import EventCommand
+from jetsoftime.eventcommand import EventCommand
 import editorui.commandtotext as c2t
 from editorui.commanditem import CommandItem, process_script
 from gamebackend import GameBackend
@@ -464,11 +464,10 @@ class CommandModel(QAbstractItemModel):
             return self.index(row, 0, parent_index)
 
     def rowCount(self, parent: QModelIndex) -> int:
+        if parent.isValid() and parent.column() != 0:
+            return 0
         if not parent.isValid():
-            # Root level - return number of root item's children
             return len(self._root_item.children)
-        
-        # Get the parent item and return its child count
         parent_item: CommandItem = parent.internalPointer()
         return len(parent_item.children)
 

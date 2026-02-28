@@ -1,7 +1,7 @@
 from editorui.menus.BaseCommandMenu import BaseCommandMenu
 from editorui.menus.ValidatingLineEdit import ValidatingLineEdit
 from editorui.menus.CommandError import CommandError
-from eventcommand import EventCommand, Operation
+from jetsoftime.eventcommand import EventCommand, Operation
 
 from PyQt6.QtWidgets import (QComboBox, QLabel, QVBoxLayout, QWidget, 
                            QRadioButton, QButtonGroup, QHBoxLayout)

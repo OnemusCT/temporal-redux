@@ -3,15 +3,15 @@ import enum
 from pathlib import Path
 from typing import ByteString, Optional, Union, Tuple
 
-from ctdecompress import compress, decompress, get_compressed_length, \
+from .ctdecompress import compress, decompress, get_compressed_length, \
     get_compressed_packet
-from ctenums import LocID
-from byteops import get_value_from_bytes, to_little_endian, to_file_ptr, \
+from .ctenums import LocID
+from .byteops import get_value_from_bytes, to_little_endian, to_file_ptr, \
     to_rom_ptr
-import ctstrings
-from eventcommand import EventCommand as EC, get_command, Platform
-from eventfunction import EventFunction as EF
-from freespace import FSRom, FSWriteType
+from . import ctstrings
+from .eventcommand import EventCommand as EC, get_command, Platform
+from .eventfunction import EventFunction as EF
+from .freespace import FSRom, FSWriteType
 
 
 class FunctionID(enum.IntEnum):

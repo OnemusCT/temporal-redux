@@ -8,7 +8,7 @@ import typing
 
 from pathlib import Path
 
-import byteops
+from . import byteops
 
 
 class InvalidSymbolException(Exception):
@@ -465,7 +465,7 @@ def get_huffman_table(rom: bytearray) -> list[bytearray]:
 
     for i in range(128):
         ptr = ptr_table_addr + 2*i
-        start = byteops.get_value_from_bytes(rom[ptr:ptr+2]) + bank
+        start = byteops.get_value_from_bytes(rom[ptr:ptr + 2]) + bank
 
         substr_len = rom[start]
         substr_start = start+1

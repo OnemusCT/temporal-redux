@@ -1,7 +1,7 @@
 import hashlib
 
-import ctevent
-import freespace
+from . import ctevent
+from . import freespace
 
 
 class InvalidRomException(Exception):
