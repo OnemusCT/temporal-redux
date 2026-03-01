@@ -85,6 +85,14 @@ from editorui.menus.Jump7BMenu import Jump7BMenu
 from editorui.menus.PcExtCopyMenu import PcExtCopyMenu
 from editorui.menus.PcExtBitMenu import PcExtBitMenu
 from editorui.menus.PcExtJumpIfMenu import PcExtJumpIfMenu
+from editorui.menus.DrawGeometryMenu import DrawGeometryMenu
+from editorui.menus.Mode7Menu import Mode7Menu
+from editorui.menus.ColorMathMenu import ColorMathMenu
+from editorui.menus.CopyTilesMenu import CopyTilesMenu
+from editorui.menus.ScrollLayersMenu import ScrollLayersMenu
+from editorui.menus.ScrollLayers2FMenu import ScrollLayers2FMenu
+from editorui.menus.SoundMenu import SoundMenu
+from editorui.menus.WaitForSilenceMenu import WaitForSilenceMenu
 
 menu_mapping = {
     EventCommandType.UNASSIGNED: {
@@ -167,8 +175,8 @@ menu_mapping = {
         EventCommandSubtype.MULTI_MODE: MultiModeMenu(),
     },
     EventCommandType.MODE7: {
-        # EventCommandSubtype.MODE7:
-        # EventCommandSubtype.DRAW_GEOMETRY:
+        EventCommandSubtype.MODE7: Mode7Menu(),
+        EventCommandSubtype.DRAW_GEOMETRY: DrawGeometryMenu(),
     },
     EventCommandType.OBJECT_COORDINATES: {
         EventCommandSubtype.GET_OBJ_COORD: GetObjectCoordMenu(),
@@ -194,20 +202,20 @@ menu_mapping = {
     },
     EventCommandType.SCENE_MANIP: {
         EventCommandSubtype.COLOR_ADD: ColorAddMenu(),
-        # EventCommandSubtype.COLOR_MATH:
-        # EventCommandSubtype.COPY_TILES:
+        EventCommandSubtype.COLOR_MATH: ColorMathMenu(),
+        EventCommandSubtype.COPY_TILES: CopyTilesMenu(),
         EventCommandSubtype.DARKEN: DarkenMenu(),
         EventCommandSubtype.FADE_OUT: FadeOutMenu(),
         EventCommandSubtype.SCRIPT_SPEED: ScriptSpeedMenu(),
-        # EventCommandSubtype.SCROLL_LAYERS:
-        # EventCommandSubtype.SCROLL_LAYERS_2F:
+        EventCommandSubtype.SCROLL_LAYERS: ScrollLayersMenu(),
+        EventCommandSubtype.SCROLL_LAYERS_2F: ScrollLayers2FMenu(),
         EventCommandSubtype.SCROLL_SCREEN: ScrollScreenMenu(),
         EventCommandSubtype.SHAKE_SCREEN: ShakeScreenMenu(),
         EventCommandSubtype.WAIT_FOR_ADD: WaitForAddMenu(),
     },
     EventCommandType.SOUND: {
-        # EventCommandSubtype.SOUND:
-        # EventCommandSubtype.WAIT_FOR_SILENCE:
+        EventCommandSubtype.SOUND: SoundMenu(),
+        EventCommandSubtype.WAIT_FOR_SILENCE: WaitForSilenceMenu(),
     },
     EventCommandType.SPRITE_COLLISION: {
         EventCommandSubtype.SPRITE_COLLISION: SpriteCollisionMenu()
