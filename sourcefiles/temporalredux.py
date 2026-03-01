@@ -640,7 +640,9 @@ class EventViewer(QMainWindow):
                 string_idx = new_command.args[0]
                 try:
                     self.state.backend.modify_string(loc_id, string_idx, modified_str)
+                    expanded = self._save_expansion_state()
                     self.model.change_location(loc_id)
+                    self._restore_expansion_state(expanded)
                 except Exception as e:
                     print(f"String update failed: {e}")
 
@@ -681,6 +683,32 @@ class EventViewer(QMainWindow):
         
         if command_type in cm.menu_mapping and command_subtype in cm.menu_mapping[command_type]:
             self.update_command_menu(cm.menu_mapping[command_type][command_subtype])
+
+    def _save_expansion_state(self) -> list[list[int]]:
+        """Return row-path lists for every currently expanded tree node."""
+        paths: list[list[int]] = []
+
+        def recurse(parent: QModelIndex, path: list[int]) -> None:
+            for row in range(self.model.rowCount(parent)):
+                idx = self.model.index(row, 0, parent)
+                child_path = path + [row]
+                if self.tree.isExpanded(idx):
+                    paths.append(child_path)
+                recurse(idx, child_path)
+
+        recurse(QModelIndex(), [])
+        return paths
+
+    def _restore_expansion_state(self, paths: list[list[int]]) -> None:
+        """Re-expand nodes identified by their row paths."""
+        for path in paths:
+            idx = QModelIndex()
+            for row in path:
+                idx = self.model.index(row, 0, idx)
+                if not idx.isValid():
+                    break
+            else:
+                self.tree.setExpanded(idx, True)
 
     def update_command_menu(self, new_menu: BaseCommandMenu):
         """Update the command menu widget"""

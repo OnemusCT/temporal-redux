@@ -18,3 +18,6 @@ class FadeOutMenu(BaseCommandMenu):
         
     def get_command(self) -> EventCommand:
         return EventCommand.fade_screen()
+
+    def apply_arguments(self, command: int, args: list):
+        pass

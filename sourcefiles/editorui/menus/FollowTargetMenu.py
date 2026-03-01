@@ -44,13 +44,16 @@ class FollowTargetMenu(BaseCommandMenu):
     def _update_ui(self, index):
         """Update UI based on follow type"""
         if index == 0:  # At Distance
-            self.target_id.setValidator(ValidatingLineEdit(min_value=1, max_value=6))
+            self.target_id.min_value = 1
+            self.target_id.max_value = 6
             self.repeat.setVisible(False)
         elif index == 1:  # Follow Object
-            self.target_id.setValidator(ValidatingLineEdit(min_value=0, max_value=0xFF))
+            self.target_id.min_value = 0
+            self.target_id.max_value = 0xFF
             self.repeat.setVisible(True)
         else:  # Follow PC
-            self.target_id.setValidator(ValidatingLineEdit(min_value=1, max_value=6))
+            self.target_id.min_value = 1
+            self.target_id.max_value = 6
             self.repeat.setVisible(True)
 
     def validate(self) -> bool:
