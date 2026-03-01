@@ -6,9 +6,10 @@ import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QComboBox, QPushButton, QLabel, QGridLayout,
-    QVBoxLayout, QHBoxLayout, QFileDialog, QDialog
+    QVBoxLayout, QHBoxLayout, QFileDialog, QDialog, QLineEdit
 )
 from PyQt6.QtCore import Qt, QModelIndex, pyqtSlot
+from PyQt6.QtGui import QShortcut, QKeySequence
 
 from gamebackend import GameBackend, SnesBackend
 from pcbackend import PcBackend
@@ -273,7 +274,8 @@ class EventViewer(QMainWindow):
         
         # Layout setup
         self.main_layout.addWidget(self.location_selector, 0, 0, 1, 2)
-        self.main_layout.addWidget(self.tree, 1, 1)
+        tree_container = self._create_tree_with_search()
+        self.main_layout.addWidget(tree_container, 1, 1)
         self.main_layout.addWidget(self.command_label, 2, 0, 1, 2)
         
         command_widget = QWidget()
@@ -448,6 +450,101 @@ class EventViewer(QMainWindow):
             for d in discrepancies:
                 print(f"- {d}")
 
+    def _create_tree_with_search(self) -> QWidget:
+        container = QWidget()
+        vbox = QVBoxLayout(container)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(2)
+
+        search_row = QHBoxLayout()
+        search_row.setSpacing(4)
+
+        self.search_box = QLineEdit()
+        self.search_box.setPlaceholderText("Search commands or addresses…")
+        self.search_box.textChanged.connect(self._on_search_changed)
+        self.search_box.returnPressed.connect(self._on_search_next)
+
+        self.search_label = QLabel("0 / 0")
+        self.search_label.setMinimumWidth(50)
+
+        btn_prev = QPushButton("↑")
+        btn_prev.setFixedWidth(28)
+        btn_prev.setToolTip("Previous match  (Shift+Enter)")
+        btn_prev.clicked.connect(self._on_search_prev)
+
+        btn_next = QPushButton("↓")
+        btn_next.setFixedWidth(28)
+        btn_next.setToolTip("Next match  (Enter)")
+        btn_next.clicked.connect(self._on_search_next)
+
+        search_row.addWidget(self.search_box)
+        search_row.addWidget(self.search_label)
+        search_row.addWidget(btn_prev)
+        search_row.addWidget(btn_next)
+
+        QShortcut(QKeySequence("Ctrl+F"), container).activated.connect(self.search_box.setFocus)
+        QShortcut(QKeySequence("Shift+Return"), container).activated.connect(self._on_search_prev)
+
+        vbox.addLayout(search_row)
+        vbox.addWidget(self.tree)
+        return container
+
+    def _collect_search_matches(self, query: str) -> list[QModelIndex]:
+        if not query:
+            return []
+        q = query.lower()
+        matches: list[QModelIndex] = []
+
+        def walk(parent: QModelIndex) -> None:
+            for row in range(self.model.rowCount(parent)):
+                idx = self.model.index(row, 0, parent)
+                item = idx.internalPointer()
+                if item and item.command is not None:
+                    hit = (item.address is not None and q in f"0x{item.address:02x}")
+                    if not hit:
+                        hit = q in (item.name or '').lower()
+                    if hit:
+                        matches.append(idx)
+                walk(idx)
+
+        walk(QModelIndex())
+        return matches
+
+    def _navigate_to_match(self, idx: QModelIndex) -> None:
+        ancestors: list[QModelIndex] = []
+        p = idx.parent()
+        while p.isValid():
+            ancestors.append(p)
+            p = p.parent()
+        for anc in reversed(ancestors):
+            self.tree.expand(anc)
+        self.tree.setCurrentIndex(idx)
+        self.tree.scrollTo(idx)
+
+    def _on_search_changed(self, text: str) -> None:
+        self._search_results = self._collect_search_matches(text)
+        self._search_index = 0
+        total = len(self._search_results)
+        if total:
+            self.search_label.setText(f"1 / {total}")
+            self._navigate_to_match(self._search_results[0])
+        else:
+            self.search_label.setText("0 / 0")
+
+    def _on_search_next(self) -> None:
+        if not self._search_results:
+            return
+        self._search_index = (self._search_index + 1) % len(self._search_results)
+        self.search_label.setText(f"{self._search_index + 1} / {len(self._search_results)}")
+        self._navigate_to_match(self._search_results[self._search_index])
+
+    def _on_search_prev(self) -> None:
+        if not self._search_results:
+            return
+        self._search_index = (self._search_index - 1) % len(self._search_results)
+        self.search_label.setText(f"{self._search_index + 1} / {len(self._search_results)}")
+        self._navigate_to_match(self._search_results[self._search_index])
+
     def create_location_selector(self):
         """Create the location selection dropdown"""
         self.location_selector = QComboBox()
@@ -468,7 +565,10 @@ class EventViewer(QMainWindow):
         self.tree.setMinimumSize(750, 750)
         self.tree.setColumnWidth(0, 70)
         self.tree.setTreePosition(1)
-        
+
+        self._search_results: list[QModelIndex] = []
+        self._search_index: int = 0
+
         root = CommandItem("Root")
         self.model = CommandModel(root_item=root, backend=self.state.backend, location_id=0x10F)
         self.tree.setModel(self.model)
@@ -613,8 +713,12 @@ class EventViewer(QMainWindow):
     def on_location_changed(self, index: int):
         """Handle location selection changes"""
         location_id = self.location_selector.itemData(index)
-        #self.state.script = ctevent.Event.from_rom_location(self.state.rom_data, location_id)
-        #self.update_command_tree(process_script(self.state.script))
+        self.search_box.blockSignals(True)
+        self.search_box.clear()
+        self.search_box.blockSignals(False)
+        self._search_results = []
+        self._search_index = 0
+        self.search_label.setText("0 / 0")
         self.model.change_location(location_id)
         self.tree.expandAll()
 
