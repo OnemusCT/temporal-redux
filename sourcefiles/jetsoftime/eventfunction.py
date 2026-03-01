@@ -146,6 +146,14 @@ class EventFunction:
         pos = 0
         while pos < len(func_bytes):
             cmd = get_command(func_bytes, pos, platform)
+            # Stop if a fixed-size command would read arg bytes past the function end.
+            # Variable-length commands (0x4E blob) intentionally span boundaries, so
+            # only apply this guard for commands whose args are all individually indexed
+            # (not blob/read_bytes style). We check: if every individual arg byte would
+            # need to be within the slice.  A simple proxy: if the command is NOT 0x4E
+            # and pos + len(cmd) > len(func_bytes), the last arg byte is out of range.
+            if cmd.command != 0x4E and pos + len(cmd) > len(func_bytes):
+                break
             ret.add(cmd)
             pos += len(cmd)
 

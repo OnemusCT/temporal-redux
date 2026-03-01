@@ -6,41 +6,10 @@ laid out as Game/ and Localize/ sub-trees.
 """
 from __future__ import annotations
 
-import io
 import os
 import struct
-import zlib
 
-_LCG_BASE = 0x19000000   # BASE_SEED (i32)
-_LCG_VAL1 = 0x41C64E6D  # multiplier (i32)
-_LCG_VAL2 = 12345        # increment  (i32)
-
-
-def _to_i32(v: int) -> int:
-    """Truncate a Python int to a signed 32-bit integer (wrapping)."""
-    v &= 0xFFFFFFFF
-    return v - 0x100000000 if v >= 0x80000000 else v
-
-
-def _xor_decrypt(data: bytes, block_seed: int) -> bytes:
-    """XOR-decrypt a block using the LCG keystream."""
-    num1 = _to_i32(_LCG_BASE + block_seed)
-    out = bytearray(len(data))
-    for i, b in enumerate(data):
-        num1 = _to_i32(num1 * _LCG_VAL1 + _LCG_VAL2)
-        out[i] = b ^ ((num1 >> 24) & 0xFF)
-    return bytes(out)
-
-
-def _decrypt_then_decompress(data: bytes, block_seed: int) -> bytes:
-    """
-    Decrypt with LCG then strip the 4-byte big-endian decompressed-length
-    prefix and gzip-decompress.
-    """
-    decrypted = _xor_decrypt(data, block_seed)
-    decompressed_len = struct.unpack_from('>I', decrypted, 0)[0]
-    decompressed = zlib.decompress(decrypted[4:], wbits=47)
-    return decompressed[:decompressed_len]
+from decrypt import to_i32, xor_decrypt, decrypt_then_decompress
 
 class ResourcesBin:
     """
@@ -69,7 +38,7 @@ class ResourcesBin:
     def _load_directory(self):
         with open(self.bin_path, 'rb') as f:
             raw_header = f.read(16)
-        header = _xor_decrypt(raw_header, 0)
+        header = xor_decrypt(raw_header, 0)
         sig = header[0:4]
         if sig != b'ARC1':
             raise ValueError(f"Not a resources.bin: bad signature {sig!r}")
@@ -79,7 +48,7 @@ class ResourcesBin:
         with open(self.bin_path, 'rb') as f:
             f.seek(dir_offset)
             raw_dir = f.read(dir_length)
-        dir_data = _decrypt_then_decompress(raw_dir, _to_i32(dir_offset))
+        dir_data = decrypt_then_decompress(raw_dir, to_i32(dir_offset))
 
         file_count = struct.unpack_from('<I', dir_data, 0)[0]
         entries = []
@@ -104,11 +73,10 @@ class ResourcesBin:
         with open(self.bin_path, 'rb') as f:
             f.seek(file_off)
             raw = f.read(file_sz)
-        return _decrypt_then_decompress(raw, _to_i32(file_off))
+        return decrypt_then_decompress(raw, to_i32(file_off))
 
     def list_files(self) -> list[str]:
         return sorted(self._index.keys())
-
 
 class GameData:
     """

@@ -22,7 +22,7 @@ class Platform(IntEnum):
 
 
 # Opcodes whose argument sizes differ between SNES and PC.
-# Maps opcode byte → arg_lens list for the PC version.
+# Maps opcode byte -> arg_lens list for the PC version.
 _PC_ARG_LENS_OVERRIDES: dict[int, list[int]] = {
     # Textbox: string index is u16 on PC (u8 on SNES)
     0xBB: [2],
@@ -42,20 +42,42 @@ _PC_ARG_LENS_OVERRIDES: dict[int, list[int]] = {
     0x83: [2, 1],
     # JumpIfHasItem: item index is u16 on PC
     0xC9: [2, 1],
+    # GiveItem variants: PC adds a category byte
+    # 0xC7: item from local-mem slot -> PC also needs category; SNES only 1 byte (mem offset)
+    0xC7: [1, 1],
+    0xCA: [1, 1],
+    0xCB: [1, 1],
+    # GetItemCount: PC adds a category byte between item and dest
+    0xD7: [1, 1, 1],
+    # Sub16: SNES uses [2-byte val, 1-byte dest]; PC both are 1-byte local-mem offsets
+    0x60: [1, 1],
     # EquipPC: extra category byte on PC
     0xD5: [1, 1, 1],
     # SetStringTable: PC stores table index u8 (not a 24-bit ROM address)
     0xB8: [1],
+    # Memory ops where SNES uses a 3-byte address but PC uses a 2-byte segment address
+    0x48: [2, 1],   # Copy8  any-addr -> local: seg_addr(2) + dest_offset(1)
+    0x49: [2, 1],   # Copy16 any-addr -> local: seg_addr(2) + dest_offset(1)
+    0x4A: [2, 1],   # Copy8  imm -> any-addr: seg_addr(2) + val(1)
+    0x4B: [2, 2],   # Copy16 imm -> any-addr: seg_addr(2) + val(2)
+    0x4C: [2, 1],   # Copy8  local -> any-addr: seg_addr(2) + src_offset(1)
+    0x4D: [2, 1],   # Copy16 local -> any-addr: seg_addr(2) + src_offset(1)
     # PC-only extended-memory ops (SNES aliases these to 0-arg unknown 0x01)
-    0x3A: [1, 1],   # Copy8  immediate → extended-mem slot
-    0x3D: [1, 1],   # Copy8  local mem → extended-mem slot
-    0x3E: [1, 1],   # Copy8  extended-mem slot → local mem
+    0x3A: [1, 1],   # Copy8  immediate -> extended-mem slot
+    0x3D: [1, 1],   # Copy8  local mem -> extended-mem slot
+    0x3E: [1, 1],   # Copy8  extended-mem slot -> local mem
     0x45: [1, 1],   # BitSet   on extended-mem slot
     0x46: [1, 1],   # BitClear on extended-mem slot
     0x6E: [1, 1, 1, 1],  # JumpIfExtended8: lhs_ext, rhs_val, cmp_op, jump_off
-    0x70: [1, 1],   # Copy8  party_slot[idx] → local mem
-    0x74: [1, 1],   # Copy16 extended-mem slot → local mem
-    0x78: [1, 1],   # Copy16 local mem → extended-mem slot
+    0x70: [1, 1],   # Copy8  party_slot[idx] -> local mem
+    0x74: [1, 1],   # Copy16 extended-mem slot -> local mem
+    0x78: [1, 1],   # Copy16 local mem -> extended-mem slot
+    # ActorSetResult16: SNES uses a 2-byte address (+7F0000); PC uses 1-byte index
+    0x1C: [1],
+    # 0xFD: SNES alias of 0x01 (crash, 0 args); PC takes 1 unknown arg byte
+    0xFD: [1],
+    # 0x47: LimitAnimations — SNES uses 1 arg byte; PC is a 0-arg NOP
+    0x47: [],
 }
 
 
@@ -107,7 +129,7 @@ class EventCommand:
     fwd_jump_commands = [0x10, 0x12, 0x13, 0x14, 0x15, 0x16, 0x18, 0x1A,
                          0x27, 0x28, 0x2D, 0x30, 0x31, 0x34, 0x35, 0x36,
                          0x37, 0x38, 0x39, 0x3B, 0x3C, 0x3F, 0x40, 0x41,
-                         0x42, 0x43, 0x44, 0xC9, 0xCC, 0xCF, 0xD2]
+                         0x42, 0x43, 0x44, 0x6E, 0xC9, 0xCC, 0xCF, 0xD2]
 
     change_loc_commands = [0xDC, 0xDD, 0xDE, 0xDF, 0xE0, 0xE1, 0xE2]
     # the number of bytes to jump is always the last arg
@@ -1593,6 +1615,71 @@ class EventCommand:
 
         return ret_command
 
+    # PC-only extended-memory factory methods
+    @staticmethod
+    def pc_copy_imm_to_ext(val: int, ext_slot: int) -> 'EventCommand':
+        ret = event_commands[0x3A].copy()
+        ret.arg_lens = [1, 1]
+        ret.args = [val, ext_slot]
+        return ret
+
+    @staticmethod
+    def pc_copy_local_to_ext(local: int, ext_slot: int) -> 'EventCommand':
+        ret = event_commands[0x3D].copy()
+        ret.arg_lens = [1, 1]
+        ret.args = [local, ext_slot]
+        return ret
+
+    @staticmethod
+    def pc_copy_ext_to_local(ext_slot: int, local: int) -> 'EventCommand':
+        ret = event_commands[0x3E].copy()
+        ret.arg_lens = [1, 1]
+        ret.args = [ext_slot, local]
+        return ret
+
+    @staticmethod
+    def pc_bitset_ext(bit: int, ext_slot: int) -> 'EventCommand':
+        ret = event_commands[0x45].copy()
+        ret.arg_lens = [1, 1]
+        ret.args = [bit, ext_slot]
+        return ret
+
+    @staticmethod
+    def pc_bitclear_ext(bit: int, ext_slot: int) -> 'EventCommand':
+        ret = event_commands[0x46].copy()
+        ret.arg_lens = [1, 1]
+        ret.args = [bit, ext_slot]
+        return ret
+
+    @staticmethod
+    def pc_jumpif_ext(lhs_ext: int, rhs_val: int, cmp_op: int,
+                      jump_bytes: int) -> 'EventCommand':
+        ret = event_commands[0x6E].copy()
+        ret.arg_lens = [1, 1, 1, 1]
+        ret.args = [lhs_ext, rhs_val, cmp_op, jump_bytes]
+        return ret
+
+    @staticmethod
+    def pc_copy_party_to_local(party_slot: int, local: int) -> 'EventCommand':
+        ret = event_commands[0x70].copy()
+        ret.arg_lens = [1, 1]
+        ret.args = [party_slot, local]
+        return ret
+
+    @staticmethod
+    def pc_copy_ext16_to_local(ext_slot: int, local: int) -> 'EventCommand':
+        ret = event_commands[0x74].copy()
+        ret.arg_lens = [1, 1]
+        ret.args = [ext_slot, local]
+        return ret
+
+    @staticmethod
+    def pc_copy_local_to_ext16(local: int, ext_slot: int) -> 'EventCommand':
+        ret = event_commands[0x78].copy()
+        ret.arg_lens = [1, 1]
+        ret.args = [local, ext_slot]
+        return ret
+
     def __len__(self):
         return 1 + sum(self.arg_lens)
 
@@ -2118,9 +2205,12 @@ event_commands[0x39] = \
                  EventCommandType.CHECK_BUTTON,
                  EventCommandSubtype.CHECK_BUTTON)
 
-event_commands[0x3A] = event_commands[0x01]
-event_commands[0x3A].command = 0x3A
-event_commands[0x3A].desc += 'Alias of 0x01.'
+event_commands[0x3A] = \
+    EventCommand(0x3A, 0, [], [],
+                 'Copy value to Extended Memory',
+                 'Copy value to Extended Memory',
+                 EventCommandType.PC_EXTENDED,
+                 EventCommandSubtype.EXT_COPY)
 
 event_commands[0x3B] = \
     EventCommand(0x3B, 1, [1],
@@ -2138,13 +2228,19 @@ event_commands[0x3C] = \
                  EventCommandType.CHECK_BUTTON,
                  EventCommandSubtype.CHECK_BUTTON)
 
-event_commands[0x3D] = event_commands[0x01]
-event_commands[0x3D].command = 0x3D
-event_commands[0x3D].desc += 'Alias of 0x01.'
+event_commands[0x3D] = \
+    EventCommand(0x3D, 0, [], [],
+                 'Copy Local Memory to Extended Memory',
+                 'Copy Local Memory to Extended Memory',
+                 EventCommandType.PC_EXTENDED,
+                 EventCommandSubtype.EXT_COPY)
 
-event_commands[0x3E] = event_commands[0x01]
-event_commands[0x3E].command = 0x3E
-event_commands[0x3E].desc += 'Alias of 0x01.'
+event_commands[0x3E] = \
+    EventCommand(0x3E, 0, [], [],
+                 'Copy Extended Memory to Local Memory',
+                 'Copy Extended Memory to Local Memory',
+                 EventCommandType.PC_EXTENDED,
+                 EventCommandSubtype.EXT_COPY)
 
 event_commands[0x3F] = \
     EventCommand(0x3F, 1, [1],
@@ -2194,13 +2290,19 @@ event_commands[0x44] = \
                  EventCommandType.CHECK_BUTTON,
                  EventCommandSubtype.CHECK_BUTTON)
 
-event_commands[0x45] = event_commands[0x01]
-event_commands[0x45].command = 0x45
-event_commands[0x45].desc += 'Alias of 0x01.'
+event_commands[0x45] = \
+    EventCommand(0x45, 0, [], [],
+                 'BitSet Extended Memory',
+                 'BitSet Extended Memory',
+                 EventCommandType.PC_EXTENDED,
+                 EventCommandSubtype.EXT_BIT)
 
-event_commands[0x46] = event_commands[0x01]
-event_commands[0x46].command = 0x46
-event_commands[0x46].desc += 'Alias of 0x01.'
+event_commands[0x46] = \
+    EventCommand(0x46, 0, [], [],
+                 'Bit Clear Extended Memory',
+                 'Bit Clear Extended Memory',
+                 EventCommandType.PC_EXTENDED,
+                 EventCommandSubtype.EXT_BIT)
 
 event_commands[0x47] = \
     EventCommand(0x47, 1, [1],
@@ -2546,9 +2648,12 @@ event_commands[0x6D] = \
                  EventCommandType.SPRITE_DRAWING,
                  EventCommandSubtype.LOAD_SPRITE)
 
-event_commands[0x6E] = event_commands[0x01]
-event_commands[0x6E].command = 0x46
-event_commands[0x6E].desc += 'Alias of 0x01.'
+event_commands[0x6E] = \
+    EventCommand(0x6E, 0, [], [],
+                 'Jump If Extended Memory',
+                 'Jump If Extended Memory',
+                 EventCommandType.PC_EXTENDED,
+                 EventCommandSubtype.EXT_JUMP)
 
 event_commands[0x6F] = \
     EventCommand(0x6F, 2, [1, 1],
@@ -2559,9 +2664,12 @@ event_commands[0x6F] = \
                  EventCommandType.BIT_MATH,
                  EventCommandSubtype.DOWNSHIFT)
 
-event_commands[0x70] = event_commands[0x01]
-event_commands[0x70].command = 0x70
-event_commands[0x70].desc += 'Alias of 0x01.'
+event_commands[0x70] = \
+    EventCommand(0x70, 0, [], [],
+                 'Party Slot to Extended Memory',
+                 'Party Slot to Extended Memory',
+                 EventCommandType.PC_EXTENDED,
+                 EventCommandSubtype.EXT_COPY)
 
 event_commands[0x71] = \
     EventCommand(0x71, 1, [1],
@@ -2587,9 +2695,12 @@ event_commands[0x73] = \
                  EventCommandType.BYTE_MATH,
                  EventCommandSubtype.VAL_TO_MEM_BYTE)
 
-event_commands[0x74] = event_commands[0x01]
-event_commands[0x74].command = 0x74
-event_commands[0x74].desc += 'Alias of 0x01.'
+event_commands[0x74] =  \
+    EventCommand(0x74, 0, [], [],
+                 'Copy two byte value from Extended Memory',
+                 'Copy two byte value from Extended Memory',
+                 EventCommandType.PC_EXTENDED,
+                 EventCommandSubtype.EXT_COPY)
 
 event_commands[0x75] = \
     EventCommand(0x75, 1, [1],
@@ -2615,11 +2726,14 @@ event_commands[0x77] = \
                  EventCommandType.ASSIGNMENT,
                  EventCommandSubtype.VAL_TO_MEM_ASSIGN)
 
-event_commands[0x78] = event_commands[0x01]
-event_commands[0x78].command = 0x78
-event_commands[0x78].desc += 'Alias of 0x01.'
+event_commands[0x78] =  \
+    EventCommand(0x78, 0, [], [],
+                 'Copy two byte value to Extended Memory',
+                 'Copy two byte value to Extended Memory',
+                 EventCommandType.PC_EXTENDED,
+                 EventCommandSubtype.EXT_COPY)
 
-event_commands[0x79] = event_commands[0x01]
+event_commands[0x79] = event_commands[0x01].copy()
 event_commands[0x79].command = 0x79
 event_commands[0x79].desc += 'Alias of 0x01.'
 
@@ -2717,11 +2831,11 @@ event_commands[0x84] = \
                  EventCommandType.SPRITE_COLLISION,
                  EventCommandSubtype.SPRITE_COLLISION)
 
-event_commands[0x85] = event_commands[0x01]
+event_commands[0x85] = event_commands[0x01].copy()
 event_commands[0x85].command = 0x85
 event_commands[0x85].desc += 'Alias of 0x01.'
 
-event_commands[0x86] = event_commands[0x01]
+event_commands[0x86] = event_commands[0x01].copy()
 event_commands[0x86].command = 0x86
 event_commands[0x86].desc += 'Alias of 0x01.'
 
@@ -2826,7 +2940,7 @@ event_commands[0x92] = \
                  EventCommandType.SPRITE_MOVEMENT,
                  EventCommandSubtype.VECTOR_MOVE)
 
-event_commands[0x93] = event_commands[0x01]
+event_commands[0x93] = event_commands[0x01].copy()
 event_commands[0x93].command = 0x93
 event_commands[0x93].desc += 'Alias of 0x01.'
 
@@ -2883,7 +2997,7 @@ event_commands[0x99] = \
                  EventCommandSubtype.MOVE_TOWARD_OBJ)
 
 event_commands[0x9A] = \
-    EventCommand(0x9A, 3, [1, 1],
+    EventCommand(0x9A, 4, [1, 1, 1],
                  ['xx: X-coordinate',
                   'yy: Y-coordinate',
                   'mm: Distance to travel'],
@@ -2892,7 +3006,7 @@ event_commands[0x9A] = \
                  EventCommandType.SPRITE_MOVEMENT,
                  EventCommandSubtype.MOVE_TOWARD_COORD)
 
-event_commands[0x9B] = event_commands[0x01]
+event_commands[0x9B] = event_commands[0x01].copy()
 event_commands[0x9B].command = 0x9B
 event_commands[0x9B].desc += 'Alias of 0x01.'
 
@@ -2951,19 +3065,19 @@ event_commands[0xA1] = \
                  EventCommandType.SPRITE_MOVEMENT,
                  EventCommandSubtype.MOVE_SPRITE_FROM_MEM)
 
-event_commands[0xA2] = event_commands[0x01]
+event_commands[0xA2] = event_commands[0x01].copy()
 event_commands[0xA2].command = 0xA2
 event_commands[0xA2].desc += 'Alias of 0x01.'
 
-event_commands[0xA3] = event_commands[0x01]
+event_commands[0xA3] = event_commands[0x01].copy()
 event_commands[0xA3].command = 0xA3
 event_commands[0xA3].desc += 'Alias of 0x01.'
 
-event_commands[0xA4] = event_commands[0x01]
+event_commands[0xA4] = event_commands[0x01].copy()
 event_commands[0xA4].command = 0xA4
 event_commands[0xA4].desc += 'Alias of 0x01.'
 
-event_commands[0xA5] = event_commands[0x01]
+event_commands[0xA5] = event_commands[0x01].copy()
 event_commands[0xA5].command = 0xA5
 event_commands[0xA5].desc += 'Alias of 0x01.'
 
@@ -3159,11 +3273,11 @@ event_commands[0xBD] = \
                  EventCommandType.PAUSE,
                  EventCommandSubtype.PAUSE)
 
-event_commands[0xBE] = event_commands[0x01]
+event_commands[0xBE] = event_commands[0x01].copy()
 event_commands[0xBE].command = 0xBE
 event_commands[0xBE].desc += 'Alias of 0x01.'
 
-event_commands[0xBF] = event_commands[0x01]
+event_commands[0xBF] = event_commands[0x01].copy()
 event_commands[0xBF].command = 0xBF
 event_commands[0xBF].desc += 'Alias of 0x01.'
 
@@ -3211,11 +3325,11 @@ event_commands[0xC4] = \
                  EventCommandType.TEXT,
                  EventCommandSubtype.TEXTBOX)
 
-event_commands[0xC5] = event_commands[0x01]
+event_commands[0xC5] = event_commands[0x01].copy()
 event_commands[0xC5].command = 0xC5
 event_commands[0xC5].desc += 'Alias of 0x01.'
 
-event_commands[0xC6] = event_commands[0x01]
+event_commands[0xC6] = event_commands[0x01].copy()
 event_commands[0xC6].command = 0xC6
 event_commands[0xC6].desc += 'Alias of 0x01.'
 
@@ -3390,7 +3504,7 @@ event_commands[0xDA] = \
                  EventCommandType.SPRITE_MOVEMENT,
                  EventCommandSubtype.PARTY_FOLLOW)
 
-event_commands[0xDB] = event_commands[0x01]
+event_commands[0xDB] = event_commands[0x01].copy()
 event_commands[0xDB].command = 0xDB
 event_commands[0xDB].desc += 'Alias of 0x01.'
 
@@ -3535,7 +3649,7 @@ event_commands[0xE8] = \
                  EventCommandType.SOUND,
                  EventCommandSubtype.SOUND)
 
-event_commands[0xE9] = event_commands[0x01]
+event_commands[0xE9] = event_commands[0x01].copy()
 event_commands[0xE9].command = 0xE9
 event_commands[0xE9].desc += 'Alias of 0x01.'
 
@@ -3582,7 +3696,7 @@ event_commands[0xEE] = \
                  EventCommandType.SOUND,
                  EventCommandSubtype.WAIT_FOR_SILENCE)
 
-event_commands[0xEF] = event_commands[0x01]
+event_commands[0xEF] = event_commands[0x01].copy()
 event_commands[0xEF].command = 0xEF
 event_commands[0xEF].desc += 'Alias of 0x01.'
 
@@ -3628,15 +3742,15 @@ event_commands[0xF4] = \
                  EventCommandType.SCENE_MANIP,
                  EventCommandSubtype.SHAKE_SCREEN)
 
-event_commands[0xF5] = event_commands[0x01]
+event_commands[0xF5] = event_commands[0x01].copy()
 event_commands[0xF5].command = 0xF5
 event_commands[0xF5].desc += 'Alias of 0x01.'
 
-event_commands[0xF6] = event_commands[0x01]
+event_commands[0xF6] = event_commands[0x01].copy()
 event_commands[0xF6].command = 0xF6
 event_commands[0xF6].desc += 'Alias of 0x01.'
 
-event_commands[0xF7] = event_commands[0x01]
+event_commands[0xF7] = event_commands[0x01].copy()
 event_commands[0xF7].command = 0xF7
 event_commands[0xF7].desc += 'Alias of 0x01.'
 
@@ -3664,15 +3778,15 @@ event_commands[0xFA] = \
                  EventCommandType.HP_MP,
                  EventCommandSubtype.RESTORE_HPMP)
 
-event_commands[0xFB] = event_commands[0x01]
+event_commands[0xFB] = event_commands[0x01].copy()
 event_commands[0xFB].command = 0xFB
 event_commands[0xFB].desc += 'Alias of 0x01.'
 
-event_commands[0xFC] = event_commands[0x01]
+event_commands[0xFC] = event_commands[0x01].copy()
 event_commands[0xFC].command = 0xFC
 event_commands[0xFC].desc += 'Alias of 0x01.'
 
-event_commands[0xFD] = event_commands[0x01]
+event_commands[0xFD] = event_commands[0x01].copy()
 event_commands[0xFD].command = 0xFD
 event_commands[0xFD].desc += 'Alias of 0x01.'
 
@@ -3720,8 +3834,14 @@ def get_command(buf: bytes, offset: int = 0,
             print(f"{command_id:02X}: Error, Unknown Mode")
     elif command_id == 0x4E:
         # Data to copy follows command.  Shove data in last arg.
-        data_len = get_value_from_bytes(buf[offset+4:offset+6]) - 2
-        command.arg_lens = [2, 1, 2, data_len]
+        # SNES layout: [dest(2), mid(1), length(2), blob(n)] — length at offset+4
+        # PC layout:   [dest(2), length(2), blob(n)]          — length at offset+3
+        if platform == Platform.PC:
+            data_len = get_value_from_bytes(buf[offset+3:offset+5]) - 2
+            command.arg_lens = [2, 2, data_len]
+        else:
+            data_len = get_value_from_bytes(buf[offset+4:offset+6]) - 2
+            command.arg_lens = [2, 1, 2, data_len]
     elif command_id == 0x88:
         mode = buf[offset+1] >> 4
         if mode == 0:
@@ -3751,7 +3871,7 @@ def get_command(buf: bytes, offset: int = 0,
         if scene == 0x90:
             command.arg_lens = [1, 1, 1, 1]
         if scene == 0x97:
-            command.arg_lens = [1, 1, 1]
+            command.arg_lens = [1, 1, 1, 1]
 
     # Now we can use arg_lens to extract the args
     pos = offset + 1

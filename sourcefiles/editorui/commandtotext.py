@@ -70,6 +70,13 @@ def if_val(args) -> str:
     return "If({} {} {:02X})".format(address_offset(args[0]), operation_to_str(args[2]), args[1])
 
 def if_local_val(args) -> str:
+    # PC mode: op_v (args[2]) encodes a high-memory flag in bit 7 plus the cmp op.
+    # SNES operation indices are 0-7; any value > 7 means PC high-memory mode.
+    if args[2] > 7:
+        lhs_addr = args[0] + 0x100  # bit 7 of op_v → high memory region
+        cmp = args[2] & 0x7F
+        return "if(global[0x{:03X}] {} {:02X}) jump {:02X}".format(
+            lhs_addr, operation_to_str(cmp), args[1], args[3])
     return "If({} {} {:02X})".format(local_address_offset(args[0]), operation_to_str(args[2]), args[1])
 
 def if_address(args) -> str:
@@ -382,6 +389,45 @@ def call_event(args, type, sync) -> str:
     func = _get_function_name(args[1] & 0xF)
     return "Call({}{}, {}, {}, {})".format(type, val_to_obj(args[0]),priority ,func, sync)
 
+# PC-only extended-memory ops. In SNES mode these commands have 0 args and
+# show "Color Crash"; in PC mode they have args that identify the operation.
+def _pc_copy8_imm_ext(args):
+    if args: return f"ext[{args[1]}] = 0x{args[0]:02X}"
+    return "Color Crash"
+
+def _pc_copy8_local_ext(args):
+    if args: return f"ext[{args[1]}] = mem[{args[0]}]"
+    return "Color Crash"
+
+def _pc_copy8_ext_local(args):
+    if args: return f"mem[{args[1]}] = ext[{args[0]}]"
+    return "Color Crash"
+
+def _pc_bitset_ext(args):
+    if args: return f"BitSet ext[{args[1]}] bit {args[0] & 0x7F}"
+    return "Color Crash"
+
+def _pc_bitclear_ext(args):
+    if args: return f"BitClear ext[{args[1]}] bit {args[0]}"
+    return "Color Crash"
+
+def pc_jumpif_ext8(args):
+    if args: return f"if(ext[{args[0]}] cmp {args[2]:02X} {args[1]:02X}) jump {args[3]:02X}"
+    return "Color Crash"
+
+def pc_copy8_party_local(args):
+    if args: return f"mem[{args[1]}] = party[{args[0]}]"
+    return "Color Crash"
+
+def pc_copy16_ext_local(args):
+    if args: return f"mem16[{args[1]}] = ext16[{args[0]}]"
+    return "Color Crash"
+
+def pc_copy16_local_ext(args):
+    if args: return f"ext16[{args[1]}] = mem16[{args[0]}]"
+    return "Color Crash"
+
+
 _command_to_text = {
     0x00: "Return",
     0x01: "Color Crash",
@@ -441,27 +487,27 @@ _command_to_text = {
     0x37: "If(Y pressed)",
     0x38: "If(L pressed)",
     0x39: "If(R pressed)",
-    0x3A: "Color crash",
+    0x3A: _pc_copy8_imm_ext,
     0x3B: "If(dashing since last check)",
     0x3C: "If(confirm since last check)",
-    0x3D: "Color crash",
-    0x3E: "Color crash",
+    0x3D: _pc_copy8_local_ext,
+    0x3E: _pc_copy8_ext_local,
     0x3F: "If(A pressed since last check)",
     0x40: "If(B pressed since last check)",
     0x41: "If(X pressed since last check)",
     0x42: "If(Y pressed since last check)",
     0x43: "If(L pressed since last check)",
     0x44: "If(R pressed since last check)",
-    0x45: "Color crash",
-    0x46: "Color crash",
-    0x47: "Limit Animations({:02X})",
+    0x45: _pc_bitset_ext,
+    0x46: _pc_bitclear_ext,
+    0x47: lambda args: "NOP(47)" if not args else f"Limit Animations({args[0]:02X})",
     0x48: assign_48,
     0x49: assign_local,
     0x4A: assign_address,
     0x4B: assign_address,
     0x4C: assign_from_local,
     0x4D: assign_from_local,
-    0x4E: "Mem Copy({:02X} {:02X} bytes to copy {:02X})",
+    0x4E: lambda args: f"Mem Copy({args[0]:02X} {len(args[-1]):02X} bytes to copy {args[-1].hex()})",
     0x4F: assign_val_to_mem,
     0x50: assign_val_to_mem,
     0x51: assign_mem_to_mem,
@@ -489,13 +535,17 @@ _command_to_text = {
     0x67: reset_bits,
     0x69: set_bits,
     0x6B: toggle_bits,
+    0x6E: pc_jumpif_ext8,
     0x6F: downshift,
+    0x70: pc_copy8_party_local,
     0x71: increment,
     0x72: increment_word,
     0x73: decrement,
+    0x74: pc_copy16_ext_local,
     0x75: set_byte,
     0x76: set_word,
     0x77: reset_byte,
+    0x78: pc_copy16_local_ext,
     0x7A: npc_jump,
     0x7F: random,
     0x80: load_pc_extended,

@@ -82,6 +82,9 @@ from editorui.menus.SetSpeedFromMemMenu import SetSpeedFromMemMenu
 from editorui.menus.ChangeLocationFromMemMenu import ChangeLocationFromMemMenu
 from editorui.menus.JumpMenu import JumpMenu
 from editorui.menus.Jump7BMenu import Jump7BMenu
+from editorui.menus.PcExtCopyMenu import PcExtCopyMenu
+from editorui.menus.PcExtBitMenu import PcExtBitMenu
+from editorui.menus.PcExtJumpIfMenu import PcExtJumpIfMenu
 
 menu_mapping = {
     EventCommandType.UNASSIGNED: {
@@ -233,6 +236,11 @@ menu_mapping = {
         EventCommandSubtype.VECTOR_MOVE_FROM_MEM: VectorMoveFromMemMenu(),
         EventCommandSubtype.SET_SPEED: SetSpeedMenu(),
         EventCommandSubtype.SET_SPEED_FROM_MEM: SetSpeedFromMemMenu(),
+    },
+    EventCommandType.PC_EXTENDED: {
+        EventCommandSubtype.EXT_COPY: PcExtCopyMenu(),
+        EventCommandSubtype.EXT_BIT: PcExtBitMenu(),
+        EventCommandSubtype.EXT_JUMP: PcExtJumpIfMenu(),
     },
     EventCommandType.TEXT: {
         EventCommandSubtype.LOAD_ASCII: LoadASCIIMenu(),

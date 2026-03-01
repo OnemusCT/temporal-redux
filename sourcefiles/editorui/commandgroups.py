@@ -28,6 +28,7 @@ class EventCommandType(Enum):
     PAUSE = "Pause"
     PARTY_MANAGEMENT = "Party Management"
     RANDOM_NUM = "Random Number"
+    PC_EXTENDED = "PC Extended"
     SCENE_MANIP = "Scene Manipulation"
     SOUND = "Sound"
     SPRITE_COLLISION = "Sprite Collision"
@@ -131,6 +132,9 @@ class EventCommandSubtype(Enum):
     STRING_INDEX = "String Index"
     TEXTBOX = "Textbox"
     COLOR_CRASH = "Color Crash"
+    EXT_BIT = "Extended Bit Op"
+    EXT_COPY = "Extended Copy"
+    EXT_JUMP = "Extended Jump"
     UNKNOWN = "Unknown"
 
 
@@ -286,6 +290,11 @@ event_command_groupings = {
         EventCommandSubtype.SPECIAL_DIALOG: [0xC8],
         EventCommandSubtype.STRING_INDEX: [0xB8],
         EventCommandSubtype.TEXTBOX: [0xBB, 0xC0, 0xC1, 0xC2, 0xC3, 0xC4],
+    },
+    EventCommandType.PC_EXTENDED: {
+        EventCommandSubtype.EXT_COPY: [0x3A, 0x3D, 0x3E, 0x70, 0x74, 0x78],
+        EventCommandSubtype.EXT_BIT: [0x45, 0x46],
+        EventCommandSubtype.EXT_JUMP: [0x6E],
     },
     EventCommandType.UNKNOWN: {
         EventCommandSubtype.COLOR_CRASH: [0x01],
