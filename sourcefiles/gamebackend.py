@@ -36,6 +36,9 @@ class GameBackend(ABC):
     def is_read_only(self) -> bool:
         pass
 
+    def modify_string(self, loc_id: int, string_idx: int, new_ascii: str) -> None:
+        raise NotImplementedError
+
 
 class SnesBackend(GameBackend):
     def __init__(self, ct_rom: CTRom):
@@ -67,6 +70,12 @@ class SnesBackend(GameBackend):
     @property
     def is_read_only(self) -> bool:
         return False
+
+    def modify_string(self, loc_id: int, string_idx: int, new_ascii: str) -> None:
+        from sourcefiles.jetsoftime.ctstrings import CTString
+        event = self.get_script(loc_id)
+        event.strings[string_idx] = CTString.from_ascii(new_ascii)
+        event.modified_strings = True
 
     @property
     def ct_rom(self) -> CTRom:

@@ -12,6 +12,14 @@ class BaseCommandMenu:
         """Validate all inputs. Returns True if valid, False if not."""
         return True  # Override in subclasses
 
+    def apply_string(self, string_text: str) -> None:
+        """Called with the decoded string content when a textbox command is selected."""
+        pass
+
+    def get_modified_string(self) -> str | None:
+        """Return new string text if the user changed it, else None."""
+        return None
+
     def safe_get_command(self):
         """Get the command, handling any errors."""
         try:

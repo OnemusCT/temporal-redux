@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QComboBox, QPushButton, QLabel, QGridLayout,
     QVBoxLayout, QHBoxLayout, QFileDialog, QDialog
 )
-from PyQt6.QtCore import Qt, pyqtSlot
+from PyQt6.QtCore import Qt, QModelIndex, pyqtSlot
 
 from gamebackend import GameBackend, SnesBackend
 from pcbackend import PcBackend
@@ -285,6 +285,66 @@ class EventViewer(QMainWindow):
         self.main_layout.setColumnStretch(1, 2)
         self.main_layout.setColumnMinimumWidth(1, 300)
     
+    def setup_script_buttons(self):
+        """Create New Object and New Command buttons."""
+        layout = QHBoxLayout()
+
+        self.new_object_button = QPushButton("New Object")
+        self.new_object_button.clicked.connect(self.on_new_object_pressed)
+
+        self.new_command_button = QPushButton("New Command")
+        self.new_command_button.clicked.connect(self.on_new_command_pressed)
+        self.new_command_button.setEnabled(False)
+
+        layout.addWidget(self.new_object_button)
+        layout.addWidget(self.new_command_button)
+        return layout
+
+    def on_new_object_pressed(self):
+        """Append a new empty object to the current script."""
+        loc_id = self.location_selector.currentData()
+        script = self.state.backend.get_script(loc_id)
+        if script.num_objects >= 0x40:
+            self.command_label.setText("Error: cannot have more than 0x40 objects")
+            return
+        script.append_empty_object()
+        self.model.change_location(loc_id)
+        self.tree.expandAll()
+        last_row = self.model.rowCount(QModelIndex()) - 1
+        if last_row >= 0:
+            self.tree.setCurrentIndex(self.model.index(last_row, 0, QModelIndex()))
+
+    def on_new_command_pressed(self):
+        """Insert a Return command into the selected function or after the selected command."""
+        selected_rows = set(
+            index for index in self.tree.selectionModel().selectedIndexes()
+            if index.column() == 0
+        )
+        if len(selected_rows) != 1:
+            return
+
+        current_index = next(iter(selected_rows))
+        current_item = current_index.internalPointer()
+
+        if current_item.command is not None:
+            self.on_insert_pressed()
+            return
+
+        func_item = current_item
+        object_item = func_item.parent
+        if object_item is None or object_item.parent is None:
+            return
+
+        obj_id = self.model._root_item.children.index(object_item)
+        func_id = object_item.children.index(func_item)
+
+        loc_id = self.location_selector.currentData()
+        script = self.state.backend.get_script(loc_id)
+        address = script.get_function_start(obj_id, func_id)
+
+        return_cmd = event_commands[0].copy()
+        self.model.insert_command(current_index, 0, return_cmd, address)
+
     def setup_command_buttons(self):
         """Create and configure the command manipulation buttons"""
         button_layout = QHBoxLayout()
@@ -431,13 +491,17 @@ class EventViewer(QMainWindow):
         self.command_menu = UnassignedMenu()
         self.command_menu_widget = self.command_menu.command_widget()
         
+        # New Object / New Command buttons (above the type dropdowns)
+        script_buttons = self.setup_script_buttons()
+
         # Update/Insert/Delete buttons
         command_buttons = self.setup_command_buttons()
-        
+
         # Command label
         self.command_label = QLabel()
-        
+
         # Add widgets to layout
+        self.command_layout.addLayout(script_buttons)
         self.command_layout.addWidget(self.command_group_selector)
         self.command_layout.addWidget(self.command_subgroup_selector)
         self.command_layout.addWidget(self.command_menu_widget)
@@ -461,14 +525,16 @@ class EventViewer(QMainWindow):
         if not has_selection:
             self.update_button.setEnabled(False)
             self.insert_button.setEnabled(False)
+            self.new_command_button.setEnabled(False)
             self.command_label.setText("")
             return
-            
+
         # Multiple selection handling
         if len(selected_rows) > 1:
             # Disable update and insert for multiple selection
             self.update_button.setEnabled(False)
             self.insert_button.setEnabled(False)
+            self.new_command_button.setEnabled(False)
             
             # Use unassigned menu for multiple selection
             self.update_command_menu(cm.menu_mapping[EventCommandType.UNASSIGNED][EventCommandSubtype.UNASSIGNED])
@@ -487,8 +553,11 @@ class EventViewer(QMainWindow):
         # Single selection handling
         item = next(iter(selected_rows)).internalPointer()
         if not item.command:
+            # Enable New Command for function nodes (depth 2: parent=object, grandparent=root)
+            is_function_node = (item.parent is not None and item.parent.parent is not None)
+            self.new_command_button.setEnabled(is_function_node)
             return
-            
+
         self.state.selected_items = [item]
         
         # Update command info display
@@ -503,6 +572,7 @@ class EventViewer(QMainWindow):
         # Enable buttons for single command selection
         self.update_button.setEnabled(True)
         self.insert_button.setEnabled(True)
+        self.new_command_button.setEnabled(True)
         
         # Update command type selectors
         if item.command.command_type:
@@ -529,6 +599,15 @@ class EventViewer(QMainWindow):
                 self.update_command_menu(menu)
                 self.command_menu.apply_arguments(item.command.command, item.command.args)
 
+                if item.command.args:
+                    string_idx = item.command.args[0]
+                    loc_id = self.location_selector.currentData()
+                    event = self.state.backend.get_script(loc_id)
+                    if string_idx < len(event.strings):
+                        from jetsoftime.ctstrings import CTString
+                        text = CTString.ct_bytes_to_ascii(bytes(event.strings[string_idx]))
+                        self.command_menu.apply_string(text)
+
 
     @pyqtSlot(int)
     def on_location_changed(self, index: int):
@@ -554,6 +633,17 @@ class EventViewer(QMainWindow):
                 
             current_item = self.tree.currentIndex().internalPointer()
             self.model.update_command(current_item, new_command)
+
+            modified_str = self.command_menu.get_modified_string()
+            if modified_str is not None and new_command.args:
+                loc_id = self.location_selector.currentData()
+                string_idx = new_command.args[0]
+                try:
+                    self.state.backend.modify_string(loc_id, string_idx, modified_str)
+                    self.model.change_location(loc_id)
+                except Exception as e:
+                    print(f"String update failed: {e}")
+
             self.tree.viewport().update()
 
             is_match, discrepancies = self.compare_tree_with_script()

@@ -3,7 +3,7 @@ from editorui.menus.ValidatingLineEdit import ValidatingLineEdit
 from jetsoftime.eventcommand import EventCommand
 
 
-from PyQt6.QtWidgets import QComboBox, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QComboBox, QLabel, QPlainTextEdit, QVBoxLayout, QWidget
 
 
 class TextboxMenu(BaseCommandMenu):
@@ -33,10 +33,12 @@ class TextboxMenu(BaseCommandMenu):
         layout.addWidget(string_label)
         layout.addWidget(self.string_id)
         layout.addWidget(self.box_type)
-        layout.addWidget(QLabel("First Line"))
-        layout.addWidget(self.first_line)
-        layout.addWidget(QLabel("Last Line"))
-        layout.addWidget(self.last_line)
+
+        layout.addWidget(QLabel("String Content"))
+        self._string_content = QPlainTextEdit()
+        self._string_content.setMaximumHeight(120)
+        self._original_string: str | None = None
+        layout.addWidget(self._string_content)
 
         result.setLayout(layout)
         self._on_type_changed(0)  # Initialize state
@@ -99,3 +101,13 @@ class TextboxMenu(BaseCommandMenu):
                 if len(args) > 1:
                     self.first_line.setCurrentIndex(args[1] >> 2)
                     self.last_line.setCurrentIndex(args[1] & 0x03)
+
+    def apply_string(self, string_text: str) -> None:
+        self._original_string = string_text
+        self._string_content.setPlainText(string_text)
+
+    def get_modified_string(self) -> str | None:
+        current = self._string_content.toPlainText()
+        if current != self._original_string:
+            return current
+        return None
