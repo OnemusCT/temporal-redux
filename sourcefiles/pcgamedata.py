@@ -17,14 +17,14 @@ class ResourcesBin:
 
     Format (XOR+gzip encrypted at seed 0):
       Header (16 bytes):
-        [0..4]   "ARC1" signature
-        [4..8]   u32 LE  total file length
-        [8..12]  u32 LE  directory offset
-        [12..16] u32 LE  directory compressed length
+        [0..4] "ARC1" signature
+        [4..8] u32 LE total file length
+        [8..12] u32 LE directory offset
+        [12..16] u32 LE directory compressed length
 
       Directory (XOR+gzip, seed = directory_offset):
-        u32 LE  file_count
-        file_count × { u32 path_offset, u32 file_offset, u32 file_size }
+        u32 LE file_count
+        file_count x { u32 path_offset, u32 file_offset, u32 file_size }
         null-terminated path strings
 
       Each file (XOR+gzip, seed = file_offset)
@@ -32,7 +32,7 @@ class ResourcesBin:
 
     def __init__(self, bin_path: str):
         self.bin_path = bin_path
-        self._index: dict[str, tuple[int, int]] = {}  # path -> (offset, size)
+        self._index: dict[str, tuple[int, int]] = {} # path -> (offset, size)
         self._load_directory()
 
     def _load_directory(self):
@@ -130,10 +130,10 @@ class GameData:
             f.write(data)
 
 # Mapinfo u16 field offsets (each field is 2 bytes):
-#   0: music_index, 2: tileset_l12, 4: tileset_l12_assembly, 6: tileset_l3,
-#   8: palette, 10: palette_anims, 12: map_index, 14: chip_anims,
-#   16: script_index, 18: unknown
-_MAP_INDEX_OFFSET    = 12
+# 0: music_index, 2: tileset_l12, 4: tileset_l12_assembly, 6: tileset_l3,
+# 8: palette, 10: palette_anims, 12: map_index, 14: chip_anims,
+# 16: script_index, 18: unknown
+_MAP_INDEX_OFFSET = 12
 _SCRIPT_INDEX_OFFSET = 16
 
 
@@ -141,13 +141,13 @@ def read_scene_header(gd: GameData, scene_index: int) -> dict:
     """Read the mapinfo header for a given scene index."""
     raw = gd.read(f"Game/field/Mapinfo/mapinfo_{scene_index}.dat")
     return {
-        'music_index':    struct.unpack_from('<H', raw, 0)[0],
-        'map_index':      struct.unpack_from('<H', raw, _MAP_INDEX_OFFSET)[0],
-        'script_index':   struct.unpack_from('<H', raw, _SCRIPT_INDEX_OFFSET)[0],
-        'scroll_left':    raw[20],
-        'scroll_top':     raw[21],
-        'scroll_right':   raw[22],
-        'scroll_bottom':  raw[23],
+        'music_index': struct.unpack_from('<H', raw, 0)[0],
+        'map_index': struct.unpack_from('<H', raw, _MAP_INDEX_OFFSET)[0],
+        'script_index': struct.unpack_from('<H', raw, _SCRIPT_INDEX_OFFSET)[0],
+        'scroll_left': raw[20],
+        'scroll_top': raw[21],
+        'scroll_right': raw[22],
+        'scroll_bottom': raw[23],
     }
 
 
@@ -173,7 +173,7 @@ def discover_msg_prefix(gd: GameData) -> str | None:
     Probe common virtual-path patterns to find where message (*.txt) files live.
 
     The Steam release stores messages under Localize/<lang>/msg/, but the
-    exact language code varies.  Returns a prefix string such as
+    exact language code varies. Returns a prefix string such as
     "Localize/us/msg" that can be joined with a filename, or None if no
     message files are found.
     """
@@ -186,13 +186,13 @@ def discover_msg_prefix(gd: GameData) -> str | None:
         if gd.exists(f"{prefix}/{_PROBE}"):
             return prefix
 
-    # Fallback: Localize/<lang>/<file>  (no msg subdir)
+    # Fallback: Localize/<lang>/<file> (no msg subdir)
     for lang in _LANGS:
         prefix = f"Localize/{lang}"
         if gd.exists(f"{prefix}/{_PROBE}"):
             return prefix
 
-    # Fallback: Localize/msg/<file>  (no lang subdir)
+    # Fallback: Localize/msg/<file> (no lang subdir)
     if gd.exists(f"Localize/msg/{_PROBE}"):
         return "Localize/msg"
 
@@ -208,7 +208,7 @@ def load_string_table(gd: GameData, msg_prefix: str, table_index: int) -> list[s
     Load a message table and return a list of strings (key prefix stripped).
 
     msg_prefix is the virtual-path prefix returned by discover_msg_prefix(),
-    e.g. "Localize/us/msg".  Returns None if the file does not exist.
+    e.g. "Localize/us/msg". Returns None if the file does not exist.
     """
     if table_index >= len(MSG_TABLE_FILES):
         return None

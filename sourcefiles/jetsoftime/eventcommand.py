@@ -76,7 +76,7 @@ _PC_ARG_LENS_OVERRIDES: dict[int, list[int]] = {
     0x1C: [1],
     # 0xFD: SNES alias of 0x01 (crash, 0 args); PC takes 1 unknown arg byte
     0xFD: [1],
-    # 0x47: LimitAnimations — SNES uses 1 arg byte; PC is a 0-arg NOP
+    # 0x47: LimitAnimations - SNES uses 1 arg byte; PC is a 0-arg NOP
     0x47: [],
 }
 
@@ -3834,8 +3834,8 @@ def get_command(buf: bytes, offset: int = 0,
             print(f"{command_id:02X}: Error, Unknown Mode")
     elif command_id == 0x4E:
         # Data to copy follows command.  Shove data in last arg.
-        # SNES layout: [dest(2), mid(1), length(2), blob(n)] — length at offset+4
-        # PC layout:   [dest(2), length(2), blob(n)]          — length at offset+3
+        # SNES layout: [dest(2), mid(1), length(2), blob(n)] - length at offset+4
+        # PC layout:   [dest(2), length(2), blob(n)]          - length at offset+3
         if platform == Platform.PC:
             data_len = get_value_from_bytes(buf[offset+3:offset+5]) - 2
             command.arg_lens = [2, 2, data_len]

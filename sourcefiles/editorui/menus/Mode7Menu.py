@@ -20,7 +20,7 @@ _SPECIAL_ITEMS = [
 ]
 
 # Indices in _SPECIAL_ITEMS that have 3 extra param bytes (0x90 and 0x97)
-_HAS_PARAMS = {0, 7}  # index 0 → 0x90, index 7 → 0x97
+_HAS_PARAMS = {0, 7}  # index 0 -> 0x90, index 7 -> 0x97
 
 
 class Mode7Menu(BaseCommandMenu):
@@ -37,7 +37,7 @@ class Mode7Menu(BaseCommandMenu):
         mode_form.addRow("Mode", self.mode_combo)
         outer.addLayout(mode_form)
 
-        # Stacked widget — page 0 = Scene, page 1 = Special
+        # Stacked widget - page 0 = Scene, page 1 = Special
         self.stack = QStackedWidget()
 
         scene_page = QWidget()

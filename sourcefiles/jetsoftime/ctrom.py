@@ -133,6 +133,14 @@ class CTRom():
             rom.seek(0x40FFDC)
             rom.write(checksum_b)
 
+    @property
+    def map_manager(self):
+        """Lazy-loaded MapManager for map data access"""
+        if not hasattr(self, '_map_manager'):
+            from mapedit.mapmanager import MapManager
+            self._map_manager = MapManager(self.rom_data)
+        return self._map_manager
+
     def make_exhirom(self):
         '''
         Turns a HiROM CTRom into an ExHiROM CTRom.

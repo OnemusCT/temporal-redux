@@ -70,17 +70,17 @@ class SoundMenu(BaseCommandMenu):
         p1 = self.param1.get_value()
         p2 = self.param2.get_value()
 
-        if idx == 0:    # Play song — 0xEA, 1 arg
+        if idx == 0:    # Play song - 0xEA, 1 arg
             return EventCommand.generic_one_arg(0xEA, p1)
-        elif idx == 1:  # Interrupt and play song — 0xEC 0x14 song
+        elif idx == 1:  # Interrupt and play song - 0xEC 0x14 song
             return EventCommand.generic_command(0xEC, 0x14, p1)
-        elif idx == 2:  # Play sound — 0xE8
+        elif idx == 2:  # Play sound - 0xE8
             return EventCommand.generic_one_arg(0xE8, p1)
         elif idx == 3:  # Play sound EC/19
             return EventCommand.generic_command(0xEC, 0x19, p1)
         elif idx in (4, 5, 6, 7):
             return EventCommand.generic_command(opcode, sub, p1, p2)
-        elif idx == 8:  # Change song state — 0xEC 0x88, no extra params
+        elif idx == 8:  # Change song state - 0xEC 0x88, no extra params
             return EventCommand.generic_command(0xEC, 0x88)
         elif idx == 9:  # Song to silence
             return EventCommand.generic_command(0xEC, 0xF0)

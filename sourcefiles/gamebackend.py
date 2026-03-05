@@ -36,6 +36,10 @@ class GameBackend(ABC):
     def is_read_only(self) -> bool:
         pass
 
+    def get_map_manager(self):
+        """Return the MapManager for this backend (SNES only; raises for PC)."""
+        raise NotImplementedError
+
     def modify_string(self, loc_id: int, string_idx: int, new_ascii: str) -> None:
         raise NotImplementedError
 
@@ -70,6 +74,9 @@ class SnesBackend(GameBackend):
     @property
     def is_read_only(self) -> bool:
         return False
+
+    def get_map_manager(self):
+        return self._ct_rom.map_manager
 
     def modify_string(self, loc_id: int, string_idx: int, new_ascii: str) -> None:
         from sourcefiles.jetsoftime.ctstrings import CTString

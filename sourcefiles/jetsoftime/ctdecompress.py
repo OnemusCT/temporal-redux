@@ -86,9 +86,10 @@ def decompress(rom, start):
                         out_buffer[out_pos + j] = \
                             out_buffer[out_pos - copy_off + j]
                     except IndexError:
-
-                        # print(out_pos + j)
-                        exit()
+                        raise RuntimeError(
+                            f"CT decompression failed: invalid back-reference "
+                            f"(out_pos={out_pos}, copy_off={copy_off}, j={j})"
+                        )
 
                 out_pos += copy_size
                 src_pos += 2

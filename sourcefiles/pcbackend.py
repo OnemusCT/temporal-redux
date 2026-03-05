@@ -33,7 +33,7 @@ _PC_TAG_MAP: dict[str, str] = {
     'NAME_AYL': '{ayla}',
     'NAME_MAG': '{magus}',
     'NICK_CRO': '{crononick}',
-    'PAGE':     '{page break}',
+    'PAGE': '{page break}',
     'AUTO_PAGE':'{page break}',
 }
 
@@ -46,14 +46,14 @@ _SAFE_CHARS = frozenset(
 
 
 _CT_KEYWORD_TO_PC: dict[str, str] = {
-    '{crono}':      '<NAME_CRO>',
-    '{marle}':      '<NAME_MAR>',
-    '{lucca}':      '<NAME_LUC>',
-    '{robo}':       '<NAME_ROB>',
-    '{frog}':       '<NAME_FRO>',
-    '{ayla}':       '<NAME_AYL>',
-    '{magus}':      '<NAME_MAG>',
-    '{crononick}':  '<NICK_CRO>',
+    '{crono}': '<NAME_CRO>',
+    '{marle}': '<NAME_MAR>',
+    '{lucca}': '<NAME_LUC>',
+    '{robo}': '<NAME_ROB>',
+    '{frog}': '<NAME_FRO>',
+    '{ayla}': '<NAME_AYL>',
+    '{magus}': '<NAME_MAG>',
+    '{crononick}': '<NICK_CRO>',
     '{page break}': '<PAGE>',
     '{line break}': '\\',
 }
@@ -87,7 +87,7 @@ def _pc_str_to_ct_ascii(s: str) -> str:
     """Translate a PC (Steam) message string to CTString-compatible ASCII.
 
     PC strings use <TAG> syntax and backslash line breaks; CTString uses
-    {keyword} syntax.  Unknown or structural tags are silently dropped.
+    {keyword} syntax. Unknown or structural tags are silently dropped.
     """
     result: list[str] = []
     pos = 0
@@ -100,7 +100,7 @@ def _pc_str_to_ct_ascii(s: str) -> str:
                 continue
             tag = s[pos + 1:end]
             if tag.startswith('WAIT'):
-                # <WAIT>HH</WAIT> — extract the hex delay value between the tags
+                # <WAIT>HH</WAIT> - extract the hex delay value between the tags
                 inner_start = end + 1
                 close = s.find('</WAIT>', inner_start)
                 if close != -1:
@@ -174,9 +174,9 @@ class PcBackend(GameBackend):
                 if len(raw) < 18:
                     continue
                 script_index = struct.unpack_from('<H', raw, _SCRIPT_INDEX_OFFSET)[0]
-                map_index    = struct.unpack_from('<H', raw, _MAP_INDEX_OFFSET)[0]
+                map_index = struct.unpack_from('<H', raw, _MAP_INDEX_OFFSET)[0]
                 self._scene_to_script[scene_index] = script_index
-                name = f"Scene {scene_index:04d}  (map={map_index}, script={script_index})"
+                name = f"Scene {scene_index:04d} (map={map_index}, script={script_index})"
                 self._location_list.append((scene_index, name))
             except Exception:
                 pass
@@ -209,7 +209,7 @@ class PcBackend(GameBackend):
         src = Path(self._gd.directory).resolve()
         dst = path.resolve()
         if src == dst:
-            return  # already written in-place by write_script
+            return # already written in-place by write_script
         if dst.is_relative_to(src):
             raise ValueError(f"Destination {dst} is inside source {src}")
         if dst.exists():
@@ -223,7 +223,7 @@ class PcBackend(GameBackend):
         event.strings[string_idx] = ctstrings.CTString.from_ascii(new_ascii)
 
         if self._gd.is_archive:
-            return  # read-only archive — in-memory update only
+            return # read-only archive - in-memory update only
 
         table_idx = event.get_string_index()
         if table_idx is None:

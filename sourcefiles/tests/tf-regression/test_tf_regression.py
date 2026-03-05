@@ -194,9 +194,9 @@ def test_tf_regression(snes_backend, loc_id):
 
             # Skip when TF has no commands for this function.  TF omits commands
             # for two reasons:
-            #   • "Link to [ADDR]" — function pointer falls inside another
+            #   • "Link to [ADDR]" - function pointer falls inside another
             #     object's byte range; TF shows the code there instead.
-            #   • Shared empty pointer — multiple functions point to the same
+            #   • Shared empty pointer - multiple functions point to the same
             #     address; TF shows commands only under the first.
             # In both cases TR may still parse (duplicate or cross-object) bytes,
             # so we can't make a meaningful comparison.

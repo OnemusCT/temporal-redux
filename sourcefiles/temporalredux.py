@@ -3,6 +3,15 @@ from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
 import sys
+import os
+
+# When invoked as `python -m sourcefiles.temporalredux` the project root is on
+# sys.path but the sourcefiles/ directory is not, so flat sibling imports fail.
+# Insert sourcefiles/ so that `from gamebackend import ...` etc. always resolve.
+_src_dir = os.path.dirname(os.path.abspath(__file__))
+if _src_dir not in sys.path:
+    sys.path.insert(0, _src_dir)
+
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QComboBox, QPushButton, QLabel, QGridLayout,
@@ -25,7 +34,7 @@ from editorui.menus.UnassignedMenu import UnassignedMenu
 def _open_file_or_directory(parent=None) -> Optional[Path]:
     """
     Show a small dialog letting the user pick either a file (SNES ROM /
-    resources.bin) or an extracted PC data directory.  Returns the chosen
+    resources.bin) or an extracted PC data directory. Returns the chosen
     Path, or None if the dialog was canceled.
     """
     dialog = QDialog(parent)
@@ -36,8 +45,8 @@ def _open_file_or_directory(parent=None) -> Optional[Path]:
     layout = QVBoxLayout(dialog)
     layout.addWidget(QLabel("Open a Chrono Trigger file or extracted PC data directory:"))
 
-    btn_file = QPushButton("Open File  (ROM / resources.bin)…")
-    btn_dir  = QPushButton("Open Directory  (extracted PC data)…")
+    btn_file = QPushButton("Open File (ROM / resources.bin)…")
+    btn_dir = QPushButton("Open Directory (extracted PC data)…")
     btn_cancel = QPushButton("Cancel")
 
     layout.addWidget(btn_file)
@@ -78,9 +87,9 @@ def detect_backend(path: Path) -> GameBackend:
     """
     Detect the correct backend for a given path.
 
-    - .smc / .sfc  → SnesBackend
-    - .bin         → PcBackend (resources.bin archive)
-    - directory    → PcBackend (extracted PC data directory)
+    - .smc / .sfc -> SnesBackend
+    - .bin -> PcBackend (resources.bin archive)
+    - directory -> PcBackend (extracted PC data directory)
     """
     if path.is_dir():
         return PcBackend(path)
@@ -117,6 +126,7 @@ class EventViewer(QMainWindow):
         self.setup_ui()
         self.on_location_changed(0)
         self._clipboard_data = None
+        self._map_editor_window = None
 
     def load_state(self, rom_path: Path):
         try:
@@ -132,6 +142,10 @@ class EventViewer(QMainWindow):
         self.model.set_backend(backend)
         self._populate_location_selector()
         self.on_location_changed(0)
+        # Discard any open map editor - it holds a reference to the old backend
+        if self._map_editor_window is not None:
+            self._map_editor_window.close()
+            self._map_editor_window = None
 
     def create_menu_bar(self):
         """Create the main menu bar with File and Edit menus"""
@@ -148,8 +162,13 @@ class EventViewer(QMainWindow):
         save_as_action = file_menu.addAction("Save As")
         save_as_action.triggered.connect(self.on_save_as)
         
+        tools_menu = menubar.addMenu("Tools")
+
+        map_editor_action = tools_menu.addAction("Map Editor…")
+        map_editor_action.triggered.connect(self.on_open_map_editor)
+
         edit_menu = menubar.addMenu("Edit")
-        
+
         cut_action = edit_menu.addAction("Cut")
         cut_action.setShortcut("Ctrl+X")
         cut_action.triggered.connect(self.on_cut)
@@ -207,6 +226,29 @@ class EventViewer(QMainWindow):
                 print("Save cancelled")
                 return
             self.state.backend.save_to_file(Path(dest))
+
+    def on_open_map_editor(self):
+        """Open (or bring to front) the standalone map editor window."""
+        backend = self.state.backend
+        try:
+            backend.get_map_manager()
+        except NotImplementedError:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self,
+                "Map Editor",
+                "Map editing is only available for SNES ROM files.",
+            )
+            return
+
+        if self._map_editor_window is None:
+            from editorui.mapeditor.map_window import MapEditorWindow
+            self._map_editor_window = MapEditorWindow(backend, parent=None)
+            self._map_editor_window.resize(1100, 750)
+
+        self._map_editor_window.show()
+        self._map_editor_window.raise_()
+        self._map_editor_window.activateWindow()
 
     def on_copy(self):
         """Handle Copy menu action"""
@@ -435,7 +477,7 @@ class EventViewer(QMainWindow):
         default_command = event_commands[0].copy()
         
         # Calculate address for new command
-        current_addr = current_item.address  if current_item.address else 0
+        current_addr = current_item.address if current_item.address else 0
         new_addr = current_addr + len(current_item.command)
         
         # Get parent index for model
@@ -469,12 +511,12 @@ class EventViewer(QMainWindow):
 
         btn_prev = QPushButton("↑")
         btn_prev.setFixedWidth(28)
-        btn_prev.setToolTip("Previous match  (Shift+Enter)")
+        btn_prev.setToolTip("Previous match (Shift+Enter)")
         btn_prev.clicked.connect(self._on_search_prev)
 
         btn_next = QPushButton("↓")
         btn_next.setFixedWidth(28)
-        btn_next.setToolTip("Next match  (Enter)")
+        btn_next.setToolTip("Next match (Enter)")
         btn_next.clicked.connect(self._on_search_next)
 
         search_row.addWidget(self.search_box)

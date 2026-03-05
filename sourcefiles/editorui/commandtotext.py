@@ -73,7 +73,7 @@ def if_local_val(args) -> str:
     # PC mode: op_v (args[2]) encodes a high-memory flag in bit 7 plus the cmp op.
     # SNES operation indices are 0-7; any value > 7 means PC high-memory mode.
     if args[2] > 7:
-        lhs_addr = args[0] + 0x100  # bit 7 of op_v → high memory region
+        lhs_addr = args[0] + 0x100  # bit 7 of op_v -> high memory region
         cmp = args[2] & 0x7F
         return "if(global[0x{:03X}] {} {:02X}) jump {:02X}".format(
             lhs_addr, operation_to_str(cmp), args[1], args[3])
