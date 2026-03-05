@@ -34,9 +34,9 @@ def _parse_tf_file(path: Path) -> dict[int, dict[int, list[tuple[int, int]]]]:
     Returns: {obj_idx: {func_idx: [(tf_addr, byte_len), ...]}}
 
     TF files are UTF-16 encoded.  Three line types:
-      - Object header   – stripped line matches "Object XX"
-      - Function header – stripped line starts with '[ADDR] Name'
-      - Command line    – stripped line starts with hex digits then '[ADDR]'
+      - Object header   - stripped line matches "Object XX"
+      - Function header - stripped line starts with '[ADDR] Name'
+      - Command line    - stripped line starts with hex digits then '[ADDR]'
 
     For commands with a '-> FULLHEX' suffix (e.g. MemCpy, ColorMath mode 8)
     byte_len is derived from the full hex rather than the abbreviated left-side

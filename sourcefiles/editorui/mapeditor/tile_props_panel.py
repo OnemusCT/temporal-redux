@@ -15,18 +15,18 @@ from editorui.mapeditor.tile_props import TileProperties
 
 
 _SOLIDITY_NAMES = [
-    "0 – Fully walkable",
-    "1 – Block NW",
-    "2 – Block NE",
-    "3 – Block N half",
-    "4 – Block SW",
-    "5 – Block W half",
-    "6 – Block diagonal NW-SE",
-    "7 – Block N+W",
-    "8 – Block SE",
-    "9 – Block diagonal NE-SW",
-    "10 – Block E half",
-    "11 – Fully solid",
+    "0 - Fully walkable",
+    "1 - Block NW",
+    "2 - Block NE",
+    "3 - Block N half",
+    "4 - Block SW",
+    "5 - Block W half",
+    "6 - Block diagonal NW-SE",
+    "7 - Block N+W",
+    "8 - Block SE",
+    "9 - Block diagonal NE-SW",
+    "10 - Block E half",
+    "11 - Fully solid",
 ]
 
 
