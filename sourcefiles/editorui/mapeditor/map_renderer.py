@@ -302,15 +302,16 @@ class MapRenderer:
 
                     # Priority gate: applies to both location and overworld.
                     # Locations: L3 tiles (bit 9) use _L3_PRIORITY_BASE; L12 use 9-bit index directly.
-                    # Overworld: L2 indices have bit 8 (0x100) set as a layer-select flag;
-                    # strip it to get the tile assembly index for the priority lookup.
+                    # Overworld: L1 tiles are indices 0-255; L2 tiles have bit 8 (0x100) set (256-511).
+                    # L1 and L2 use *separate sections* of the L12 tile assembly, so their priority
+                    # bits differ. Preserve the full tile_idx (including 0x100 for L2) for the lookup.
                     if is_loc:
                         if tile_idx & _L3_TILE_FLAG:
                             prior_base = _L3_PRIORITY_BASE + (tile_idx & 0xFF) * 4
                         else:
                             prior_base = tile_idx * 4
                     else:
-                        prior_base = (tile_idx & 0xFF) * 4
+                        prior_base = tile_idx * 4
 
                     priorities = [0, 0, 0, 0]
                     for _sub in range(4):

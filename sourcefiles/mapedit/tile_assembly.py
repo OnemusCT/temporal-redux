@@ -74,6 +74,8 @@ def encode_tile(refs: list[SubtileReference]) -> bytes:
     return bytes(result)
 
 
+PRIORITY_TABLE_SIZE = 0x1000
+
 def build_priority_table(
     l12_asm: Union[bytes, bytearray],
     l3_asm: Union[bytes, bytearray, None],
@@ -87,7 +89,7 @@ def build_priority_table(
       for L12 tiles (indices 0..num_l12_tiles-1)
       table[0x800 + tile_index * 4 + subtile] for L3 tiles (bit 9 stripped)
     """
-    table = bytearray(0x1000)
+    table = bytearray(PRIORITY_TABLE_SIZE)
     for tile_idx in range(num_l12_tiles):
         if tile_idx * 8 + 7 >= len(l12_asm):
             break

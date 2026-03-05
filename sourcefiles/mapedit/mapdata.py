@@ -2,7 +2,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import enum
 from typing import Union
+
+class Layer(enum.IntEnum):
+    L1 = 0
+    L2 = 1
+    L3 = 2
 
 @dataclass
 class MapHeader:
@@ -116,6 +122,7 @@ def rle_decompress(
     while dst < dest_size and src < data_len:
         b0 = data[src]
         if b0 & 0x80:
+            # Format: [byte0 | 0x80] [byte1] [byte2] [count]
             # Run: 4-byte command
             if src + 3 >= data_len:
                 break
@@ -133,6 +140,7 @@ def rle_decompress(
                 dest[dst + 2] = b2
                 dst += 3
         else:
+            # Format: [byte0_literal] [byte1] [byte2]
             # Literal: 3-byte record
             if src + 2 >= data_len:
                 break
@@ -172,6 +180,7 @@ def rle_compress(data: Union[bytes, bytearray]) -> bytearray:
             run_len += 1
 
         if run_len >= 2 or (b0 & 0x80):
+            # Format: [byte0 | 0x80] [byte1] [byte2] [count]
             # Run encoding: count capped at 255; emit one run at a time if > 255
             count = min(run_len, 255)
             result.append(b0 | 0x80)
@@ -180,6 +189,7 @@ def rle_compress(data: Union[bytes, bytearray]) -> bytearray:
             result.append(count)
             i += count * 3
         else:
+            # Format: [byte0_literal] [byte1] [byte2]
             # Literal triplet
             result.append(b0)
             result.append(b1)
@@ -201,6 +211,8 @@ class LocationMap:
         self._layer_offset = [6, 0, 0]
         self._max_width = 16
         self._max_height = 16
+        self._widths = [16, 16, 16]
+        self._heights = [16, 16, 16]
         self._tile_prop_offset = 6
 
     def load(self, data: Union[bytes, bytearray], is_beta: bool = False) -> None:
@@ -216,6 +228,8 @@ class LocationMap:
 
         self._max_width = max(self.header.l1_width, self.header.l2_width)
         self._max_height = max(self.header.l1_height, self.header.l2_height)
+        self._widths = [self.header.l1_width, self.header.l2_width, self.header.l3_width]
+        self._heights = [self.header.l1_height, self.header.l2_height, self.header.l3_height]
 
         tile_prop_offset = self._layer_offset[2]
         if self.header.draw_l3:
@@ -251,37 +265,33 @@ class LocationMap:
             result.extend(rle_compress(self.tile_props[:used]))
         return result
 
-    def get_tile(self, layer: int, x: int, y: int) -> int:
+    def get_tile(self, layer: Layer | int, x: int, y: int) -> int:
         """Return the tile index for (layer, x, y).
 
         L1/L2 -> 9-bit index (bit 8 from tile_props).
         L3 -> 8-bit index OR'd with 0x200.
         """
-        widths = [self.header.l1_width, self.header.l2_width, self.header.l3_width]
-        heights = [self.header.l1_height, self.header.l2_height, self.header.l3_height]
-        if x >= widths[layer] or y >= heights[layer]:
+        if x >= self._widths[layer] or y >= self._heights[layer]:
             return 0
-        index = self._layer_offset[layer] + y * widths[layer] + x
+        index = self._layer_offset[layer] + y * self._widths[layer] + x
         val = self.raw_data[index]
-        if layer == 2:
+        if layer == Layer.L3:
             return val | 0x200
         prop_idx = 3 * (y * self._max_width + x)
-        if layer == 0:
+        if layer == Layer.L1:
             return val | ((self.tile_props[prop_idx] & 0x01) << 8)
         return val | (((self.tile_props[prop_idx] & 0x02) >> 1) << 8)
 
-    def set_tile(self, layer: int, x: int, y: int, value: int) -> None:
+    def set_tile(self, layer: Layer | int, x: int, y: int, value: int) -> None:
         """Write a tile value. value is 9-bit for L1/L2, 8-bit for L3."""
-        widths = [self.header.l1_width, self.header.l2_width, self.header.l3_width]
-        heights = [self.header.l1_height, self.header.l2_height, self.header.l3_height]
-        if x >= widths[layer] or y >= heights[layer]:
+        if x >= self._widths[layer] or y >= self._heights[layer]:
             return
-        idx = self._layer_offset[layer] + y * widths[layer] + x
+        idx = self._layer_offset[layer] + y * self._widths[layer] + x
         # Low 8 bits of the tile index go directly into the raw layer data.
         self.raw_data[idx] = value & 0xFF
 
         # L3 tile indices are 8-bit only; no 9th bit to store.
-        if layer == 2:
+        if layer == Layer.L3:
             return
 
         # The 9th bit (bit 8) of L1/L2 tile indices is packed into the first
@@ -291,7 +301,7 @@ class LocationMap:
         # This mirrors the ROM layout and is the inverse of get_tile().
         prop_idx = 3 * (y * self._max_width + x)
         high_bit = (value >> 8) & 0x01
-        if layer == 0:
+        if layer == Layer.L1:
             # Write high_bit into bit 0; preserve all other bits.
             self.tile_props[prop_idx] = (self.tile_props[prop_idx] & 0xFE) | high_bit
         else:
