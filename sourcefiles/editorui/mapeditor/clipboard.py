@@ -9,11 +9,11 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 
 class PasteMode(Enum):
-    ALL_LAYERS = auto(),
-    LAYER_1 = auto(),
-    LAYER_2 = auto(),
-    LAYER_3 = auto(),
-    PROPS_ONLY = auto(),
+    ALL_LAYERS = auto()
+    LAYER_1 = auto()
+    LAYER_2 = auto()
+    LAYER_3 = auto()
+    PROPS_ONLY = auto()
 
 @dataclass
 class ClipboardRegion:

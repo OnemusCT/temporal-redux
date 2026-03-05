@@ -311,22 +311,38 @@ class MapRenderer:
                             prior_base = tile_idx * 4
                     else:
                         prior_base = (tile_idx & 0xFF) * 4
-                    subtile_priority = 0
+
+                    priorities = [0, 0, 0, 0]
                     for _sub in range(4):
                         if prior_base + _sub < len(self._priority_tbl):
-                            subtile_priority |= self._priority_tbl[prior_base + _sub]
-                    if is_main and not subtile_priority:
-                        continue
-                    if not is_main and subtile_priority:
+                            priorities[_sub] = self._priority_tbl[prior_base + _sub]
+
+                    matches = [(p != 0) == is_main for p in priorities]
+                    if not any(matches):
                         continue
 
                     tile_img = self.render_tile(tile_idx)
                     px = x * _TILE_PIXELS
                     py = y * _TILE_PIXELS
-                    mask = tile_img[:, :, 3:4] > 0
-                    canvas[py:py + _TILE_PIXELS, px:px + _TILE_PIXELS] = np.where(
-                        mask, tile_img, canvas[py:py + _TILE_PIXELS, px:px + _TILE_PIXELS]
-                    )
+
+                    if all(matches):
+                        mask = tile_img[:, :, 3:4] > 0
+                        canvas[py:py + _TILE_PIXELS, px:px + _TILE_PIXELS] = np.where(
+                            mask, tile_img, canvas[py:py + _TILE_PIXELS, px:px + _TILE_PIXELS]
+                        )
+                    else:
+                        for _sub, match in enumerate(matches):
+                            if not match:
+                                continue
+                            col_off = (_sub % 2) * _SUBTILE_PIXELS
+                            row_off = (_sub // 2) * _SUBTILE_PIXELS
+                            sub_img = tile_img[row_off:row_off + _SUBTILE_PIXELS, col_off:col_off + _SUBTILE_PIXELS, :]
+                            sub_mask = sub_img[:, :, 3:4] > 0
+                            dst_y = py + row_off
+                            dst_x = px + col_off
+                            canvas[dst_y:dst_y + _SUBTILE_PIXELS, dst_x:dst_x + _SUBTILE_PIXELS] = np.where(
+                                sub_mask, sub_img, canvas[dst_y:dst_y + _SUBTILE_PIXELS, dst_x:dst_x + _SUBTILE_PIXELS]
+                            )
 
         return _ndarray_to_qimage(canvas)
 

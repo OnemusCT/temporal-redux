@@ -38,6 +38,7 @@ class TilePropsPanel(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._updating = False
+        self._cached_props = TileProperties(raw=b'\x00\x00\x00')
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -83,6 +84,7 @@ class TilePropsPanel(QWidget):
 
     def load(self, props: TileProperties) -> None:
         self._updating = True
+        self._cached_props = props
         self._solidity.setCurrentIndex(min(props.solidity_quad,
                                            self._solidity.count() - 1))
         self._z_plane.setChecked(props.z_plane)
@@ -97,9 +99,9 @@ class TilePropsPanel(QWidget):
         self._updating = False
 
     def current_props(self) -> TileProperties:
-        b0 = (self._solidity.currentIndex() << 2) | (int(self._z_plane.isChecked()) << 6)
+        b0 = (self._cached_props.b0 & ~0x7C) | ((self._solidity.currentIndex() & 0x0F) << 2) | (int(self._z_plane.isChecked()) << 6)
         b1 = self._wind_dir.value() | (self._wind_speed.value() << 3)
-        b2 = (
+        b2 = (self._cached_props.b2 & ~0x70) | (
             (int(self._is_door.isChecked()) << 4)
             | (int(self._is_battle.isChecked()) << 5)
             | (int(self._is_npc_col.isChecked()) << 6)
