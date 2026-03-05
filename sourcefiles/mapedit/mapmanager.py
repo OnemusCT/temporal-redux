@@ -8,6 +8,7 @@ from sourcefiles.jetsoftime.byteops import to_rom_ptr, to_little_endian, get_val
 from sourcefiles.jetsoftime.freespace import FSRom, FSWriteType
 from sourcefiles.jetsoftime.ctdecompress import decompress, compress, get_compressed_length
 from . import map_addresses as ma
+from .map_addresses import RomAddress
 from .mapdata import LocationMap, OverworldMap
 
 
@@ -129,7 +130,7 @@ class MapManager:
           byte 12: scroll right
           byte 13: scroll bottom
         """
-        base = ma.get_addr("location_properties", self.rom_type)
+        base = ma.get_addr(RomAddress.LOCATION_PROPERTIES, self.rom_type)
         rom = self._rom()
         off = base + loc_id * 14
         rec = rom[off:off + 14]
@@ -165,7 +166,7 @@ class MapManager:
 
     def _load_loc_map_by_index(self, map_idx: int) -> LocationMap:
         """Low-level: load a LocationMap by its map-data record index."""
-        ptr_table = ma.get_addr("location_map_ptr_table", self.rom_type)
+        ptr_table = ma.get_addr(RomAddress.LOCATION_MAP_PTR_TABLE, self.rom_type)
         rom = self._rom()
         file_addr = self._read_ptr(ptr_table, map_idx, rom)
         raw = decompress(rom, file_addr)
@@ -210,7 +211,7 @@ class MapManager:
         if map_slot in self._ow_map_cache:
             return self._ow_map_cache[map_slot]
 
-        ptr_table = ma.get_addr("overworld_map_ptr_table", self.rom_type) # overworld map
+        ptr_table = ma.get_addr(RomAddress.OVERWORLD_MAP_PTR_TABLE, self.rom_type) # overworld map
         rom = self._rom()
         file_addr = self._read_ptr(ptr_table, map_slot, rom)
         raw = decompress(rom, file_addr)
@@ -257,7 +258,7 @@ class MapManager:
     @property
     def _max_l12_tileset(self) -> int:
         """Max valid location tileset index, derived from the address range for this rom_type."""
-        return (ma.get_addr("location_map_ptr_table", self.rom_type) - ma.get_addr("location_tileset_base", self.rom_type)) // 8 - 1
+        return (ma.get_addr(RomAddress.LOCATION_MAP_PTR_TABLE, self.rom_type) - ma.get_addr(RomAddress.LOCATION_TILESET_BASE, self.rom_type)) // 8 - 1
 
     def get_l12_subtile_data(self, l12_tileset_idx: int) -> bytearray:
         """Assemble L12 subtile graphics for the given tileset index.
@@ -280,8 +281,8 @@ class MapManager:
         if key in self._assembled_gfx_cache:
             return self._assembled_gfx_cache[key]
 
-        tileset_rec_base = ma.get_addr("location_tileset_base", self.rom_type)
-        ptr_table = ma.get_addr("subtile_graphics_ptr_table", self.rom_type)
+        tileset_rec_base = ma.get_addr(RomAddress.LOCATION_TILESET_BASE, self.rom_type)
+        ptr_table = ma.get_addr(RomAddress.SUBTILE_GRAPHICS_PTR_TABLE, self.rom_type)
         rom = self._rom()
         result = bytearray(self._L12_GFX_BUFFER_SIZE)
 
@@ -319,16 +320,16 @@ class MapManager:
         key = ('l3', l3_tileset_idx)
         if key in self._assembled_gfx_cache:
             return self._assembled_gfx_cache[key]
-        ptr_table = ma.get_addr("subtile_graphics_ptr_table", self.rom_type)
+        ptr_table = ma.get_addr(RomAddress.SUBTILE_GRAPHICS_PTR_TABLE, self.rom_type)
         raw = bytearray(self._decompress_at_ptr(ptr_table, l3_tileset_idx))
         self._assembled_gfx_cache[key] = raw
         return raw
 
-    _TILE_ASM_ADDR: dict[str, str] = {
-        'l12': "layer_12_tile_assembly",
-        'l3': "layer_3_tile_assembly",
-        'ow_l12': "overworld_layer_12_tile_assembly",
-        'ow_l3': "overworld_layer_3_tile_assembly",
+    _TILE_ASM_ADDR: dict[str, RomAddress] = {
+        'l12': RomAddress.LAYER_12_TILE_ASSEMBLY,
+        'l3': RomAddress.LAYER_3_TILE_ASSEMBLY,
+        'ow_l12': RomAddress.OVERWORLD_LAYER_12_TILE_ASSEMBLY,
+        'ow_l3': RomAddress.OVERWORLD_LAYER_3_TILE_ASSEMBLY,
     }
 
     def get_tile_assembly(self, index: int, layer: str = 'l12') -> bytearray:
@@ -360,7 +361,7 @@ class MapManager:
         """
         if palette_idx in self._loc_palette_cache:
             return self._loc_palette_cache[palette_idx]
-        base = ma.get_addr("location_palette_base", self.rom_type)
+        base = ma.get_addr(RomAddress.LOCATION_PALETTE_BASE, self.rom_type)
         rom = self._rom()
         off = base + palette_idx * self._PALETTE_STRIDE
         raw = bytearray(rom[off:off + self._PALETTE_STRIDE])
@@ -379,7 +380,7 @@ class MapManager:
           byte 16: l12_asm - index into overworld L1/2 tiles
           byte 20: l3_asm - index into overworld L3 tiles
         """
-        base = ma.get_addr("overworld_map_properties", self.rom_type)
+        base = ma.get_addr(RomAddress.OVERWORLD_MAP_PROPERTIES, self.rom_type)
         rom = self._rom()
         off = base + ow_index * self._OW_PROP_STRIDE
         rec = rom[off:off + self._OW_PROP_STRIDE]
@@ -432,7 +433,7 @@ class MapManager:
         key = ('ow_l3', l3_ts)
         if key in self._assembled_gfx_cache:
             return self._assembled_gfx_cache[key]
-        ptr_table = ma.get_addr("overworld_tile_ptr_table", self.rom_type)
+        ptr_table = ma.get_addr(RomAddress.OVERWORLD_TILE_PTR_TABLE, self.rom_type)
         raw = bytearray(self._decompress_at_ptr(ptr_table, l3_ts))[:self._SUBTILE_CHUNK_SIZE]
         if len(raw) < self._SUBTILE_CHUNK_SIZE:
             raw = raw + bytearray(self._SUBTILE_CHUNK_SIZE - len(raw))
@@ -449,7 +450,7 @@ class MapManager:
         """
         if pal_idx in self._ow_palette_cache:
             return self._ow_palette_cache[pal_idx]
-        ptr_table = ma.get_addr("overworld_palette_ptr_table", self.rom_type)
+        ptr_table = ma.get_addr(RomAddress.OVERWORLD_PALETTE_PTR_TABLE, self.rom_type)
         raw = bytearray(self._decompress_at_ptr(ptr_table, pal_idx))
         self._ow_palette_cache[pal_idx] = raw
         return raw
