@@ -184,9 +184,13 @@ def test_tf_regression(snes_backend, loc_id):
         tf_obj    = tf_data.get(obj_idx, {})
 
         for func_idx in range(num_funcs):
-            func_item = obj_item.children[func_idx]
-            tr_cmds   = _flatten_items(func_item.children)
-            tf_cmds   = tf_obj.get(func_idx, [])
+            func_item   = obj_item.children[func_idx]
+            # TR skips empty functions (func >= 3 with _function_is_empty), so
+            # the TR tree index may not match the original function slot number.
+            # Use func_id (the original slot) to look up TF and SNES data.
+            ct_func_id  = func_item.func_id
+            tr_cmds     = _flatten_items(func_item.children)
+            tf_cmds     = tf_obj.get(ct_func_id, [])
 
             # TODO: Consider making TR behave like TF for these cases. It will be
             # confusing to make edits that appear to be different functions but
@@ -208,8 +212,9 @@ def test_tf_regression(snes_backend, loc_id):
             # pointer: TR ends up parsing the same bytecode again, but TF already
             # showed it under the earlier function and left this one empty above.
             if func_idx > 0:
-                cur_start  = event.get_function_start(obj_idx, func_idx)
-                prev_start = event.get_function_start(obj_idx, func_idx - 1)
+                prev_func_id = obj_item.children[func_idx - 1].func_id
+                cur_start  = event.get_function_start(obj_idx, ct_func_id)
+                prev_start = event.get_function_start(obj_idx, prev_func_id)
                 if cur_start == prev_start:
                     continue
 

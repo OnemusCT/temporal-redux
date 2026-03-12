@@ -325,8 +325,6 @@ class CTString(bytearray):
                 ret_str += ' '
             else:
                 ret_str += '[:bad:]'
-                raise ValueError(f"Bad byte: {cur_byte:02X}")
-
             pos += 1
 
         return ret_str

@@ -233,7 +233,7 @@ class CommandModel(QAbstractItemModel):
         target_item = target_index.internalPointer() if target_index.isValid() else self._root_item
         
         # Determine insert position and parent based on target
-        if target_item.children and target_item.command and target_item.command.command in EventCommand.conditional_commands:
+        if target_item.command and target_item.command.command in EventCommand.conditional_commands:
             # Pasting onto conditional command - insert at start of children
             target_parent = target_item
             insert_pos = 0
@@ -376,7 +376,7 @@ class CommandModel(QAbstractItemModel):
                 self.delete_command(index)
                 items_to_move.append((item, len(item.command)))
         # Determine insert position and parent
-        if target_item.children and target_item.command and target_item.command.command in EventCommand.conditional_commands:
+        if target_item.command and target_item.command.command in EventCommand.conditional_commands:
             # Case 1: Dropping onto a conditional command - insert at beginning of its children
             target_parent = target_item
             insert_pos = 0
@@ -389,7 +389,7 @@ class CommandModel(QAbstractItemModel):
             # Calculate insert address - should be after the target item
             insert_address = target_item.address + len(target_item.command)
 
-        # Insert items at new position        
+        # Insert items at new position
         current_address = insert_address
         for item, command_size in items_to_move:
             self.insert_command(self.get_index_for_item(target_parent), insert_pos, item.command, current_address)
@@ -603,7 +603,7 @@ class CommandModel(QAbstractItemModel):
             len(d.command) for d in _get_all_commands(item)[1:]
             if d.command is not None
         )
-        item.command.args[-1] = total
+        item.command.args[-1] = total + 1 if total > 0 else 0
         item_index = self.get_index_for_item(item)
         self.dataChanged.emit(
             self.createIndex(item_index.row(), 0, item),
@@ -611,17 +611,38 @@ class CommandModel(QAbstractItemModel):
             [Qt.ItemDataRole.DisplayRole]
         )
 
+    def _sync_conditional_to_script(self, item: CommandItem) -> None:
+        """Write the tree's recalculated command bytes back to script.data."""
+        if self._backend is None or item.command is None or item.address is None:
+            return
+        script = self._backend.get_script(self._location_id)
+        cmd_bytes = item.command.to_bytearray()
+        script.data[item.address:item.address + len(cmd_bytes)] = cmd_bytes
+
     def _recalculate_ancestor_jumps(self, item: CommandItem) -> None:
         current = item.parent
         while current is not None and current != self._root_item:
             if current.command is not None and current.command.command in EventCommand.conditional_commands:
                 self._recalculate_jump_bytes(current)
+                self._sync_conditional_to_script(current)
             current = current.parent
 
     def change_location(self, location_id: int):
         self._location_id = location_id
         items = process_script(self._backend.get_script(location_id))
         new_root = CommandItem(name="Root", children=items)
+        self.replace_items(new_root)
+
+    def append_function(self, obj_id: int) -> None:
+        script = self._backend.get_script(self._location_id)
+        script.append_function(obj_id)
+        new_root = CommandItem(name="Root", children=process_script(script))
+        self.replace_items(new_root)
+
+    def remove_function(self, obj_id: int, func_id: int) -> None:
+        script = self._backend.get_script(self._location_id)
+        script.remove_function(obj_id, func_id)
+        new_root = CommandItem(name="Root", children=process_script(script))
         self.replace_items(new_root)
 
 def print_command_tree(model: CommandModel):
