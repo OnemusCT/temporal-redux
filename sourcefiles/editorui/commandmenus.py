@@ -143,7 +143,7 @@ menu_mapping = {
     EventCommandType.COMPARISON: {
         EventCommandSubtype.CHECK_DRAWN: CheckDrawnMenu(),
         EventCommandSubtype.CHECK_IN_BATTLE: CheckInBattleMenu(),
-        EventCommandSubtype.MEM_TO_MEM_COMP: ComparisonMenu(),
+        EventCommandSubtype.MEM_TO_MEM_COMP: ComparisonMenu(is_mem_to_mem=True),
         EventCommandSubtype.VAL_TO_MEM_COMP: ComparisonMenu(),
     },
     EventCommandType.END: {

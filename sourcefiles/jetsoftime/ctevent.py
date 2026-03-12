@@ -667,6 +667,30 @@ class Event:
 
         return self.num_objects-1
 
+    def append_function(self, obj_id: int) -> int:
+        '''Add the next empty arbitrary function slot with a single Return command.
+        Returns the func_id of the newly created function.'''
+        first_empty = next(
+            (f for f in range(3, 16) if self._function_is_empty(obj_id, f)),
+            None
+        )
+        if first_empty is None:
+            raise IndexError("Object already has the maximum 13 arbitrary functions.")
+        ev_func = EF.from_bytearray(bytearray([0x00]), self.platform)
+        self.set_function_new(obj_id, first_empty, ev_func)
+        return first_empty
+
+    def remove_function(self, obj_id: int, func_id: int) -> None:
+        '''Remove an arbitrary function by erasing its bytecode and marking the slot empty.'''
+        if func_id < 3:
+            raise ValueError("Cannot remove Startup, Activate, or Touch functions.")
+        if self._function_is_empty(obj_id, func_id):
+            raise ValueError("Function is already empty.")
+        if self._function_is_linked(obj_id, func_id):
+            raise ValueError("Cannot remove a linked function.")
+        ev_func = EF.from_bytearray(bytearray(), self.platform)
+        self.set_function_new(obj_id, func_id, ev_func)
+
     def insert_copy_object(self, copy_id: int, ins_id: int):
         '''
         Insert a copy of object copy_id into spot ins_id.

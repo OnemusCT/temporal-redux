@@ -6,6 +6,7 @@ from pathlib import Path
 
 from sourcefiles.jetsoftime import ctevent, ctstrings
 from gamebackend import GameBackend
+from editorui.lookups import locations
 from pcgamedata import (
     GameData,
     MSG_TABLE_FILES,
@@ -169,6 +170,7 @@ class PcBackend(GameBackend):
                 continue
 
             consecutive_misses = 0
+            locations_map = dict(locations)
             try:
                 raw = self._gd.read(vpath)
                 if len(raw) < 18:
@@ -176,8 +178,10 @@ class PcBackend(GameBackend):
                 script_index = struct.unpack_from('<H', raw, _SCRIPT_INDEX_OFFSET)[0]
                 map_index    = struct.unpack_from('<H', raw, _MAP_INDEX_OFFSET)[0]
                 self._scene_to_script[scene_index] = script_index
-                name = f"Scene {scene_index:04d}  (map={map_index}, script={script_index})"
-                self._location_list.append((scene_index, name))
+                if scene_index in locations_map:
+                    self._location_list.append((scene_index, f"{scene_index:03X} - {locations_map[scene_index]}"))
+                else:
+                    self._location_list.append((scene_index,  f"Unknown - Scene {scene_index:04d}  (map={map_index}, script={script_index})"))
             except Exception:
                 pass
 

@@ -1,14 +1,17 @@
 from __future__ import annotations
+import sys
 from pathlib import Path
+# Ensure sourcefiles/ is on sys.path
+sys.path.insert(0, str(Path(__file__).parent))
+
 from typing import Optional
 from dataclasses import dataclass
-import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
-    QComboBox, QPushButton, QLabel, QGridLayout,
-    QVBoxLayout, QHBoxLayout, QFileDialog, QDialog, QLineEdit
+    QComboBox, QCompleter, QPushButton, QLabel, QGridLayout,
+    QVBoxLayout, QHBoxLayout, QFileDialog, QDialog, QLineEdit, QMenu
 )
-from PyQt6.QtCore import Qt, QModelIndex, pyqtSlot
+from PyQt6.QtCore import Qt, QModelIndex, QPoint, pyqtSlot
 from PyQt6.QtGui import QShortcut, QKeySequence
 
 from gamebackend import GameBackend, SnesBackend
@@ -21,6 +24,7 @@ from editorui.commandtreeview import CommandTreeView
 from editorui.commanditem import CommandItem, process_script
 from editorui.menus.BaseCommandMenu import BaseCommandMenu
 from editorui.menus.UnassignedMenu import UnassignedMenu
+
 
 def _open_file_or_directory(parent=None) -> Optional[Path]:
     """
@@ -173,7 +177,6 @@ class EventViewer(QMainWindow):
         if self.state.backend.is_read_only:
             print("Save not supported for this file type.")
             return
-        self.state.backend.write_script(self.location_selector.currentData())
         is_match, discrepancies = self.compare_tree_with_script()
         if not is_match:
             print("Tree discrepancies found:")
@@ -181,6 +184,10 @@ class EventViewer(QMainWindow):
                 print(f"- {d}")
             print("Save cancelled")
             return
+        location_id = self.location_selector.currentData()
+        self.state.backend.write_script(location_id)
+        self.model.change_location(location_id)
+        self.tree.expandAll()
         self.state.backend.save_to_file(self.state.file)
 
     def on_save_as(self):
@@ -198,7 +205,6 @@ class EventViewer(QMainWindow):
                 "SNES ROM Files (*.smc *.sfc);;All Files (*.*)"
             )
         if dest:
-            self.state.backend.write_script(self.location_selector.currentData())
             is_match, discrepancies = self.compare_tree_with_script()
             if not is_match:
                 print("Tree discrepancies found:")
@@ -206,6 +212,10 @@ class EventViewer(QMainWindow):
                     print(f"- {d}")
                 print("Save cancelled")
                 return
+            location_id = self.location_selector.currentData()
+            self.state.backend.write_script(location_id)
+            self.model.change_location(location_id)
+            self.tree.expandAll()
             self.state.backend.save_to_file(Path(dest))
 
     def on_copy(self):
@@ -546,8 +556,10 @@ class EventViewer(QMainWindow):
         self._navigate_to_match(self._search_results[self._search_index])
 
     def create_location_selector(self):
-        """Create the location selection dropdown"""
+        """Create the location selection dropdown with substring search."""
         self.location_selector = QComboBox()
+        self.location_selector.setEditable(True)
+        self.location_selector.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._populate_location_selector()
         self.location_selector.currentIndexChanged.connect(self.on_location_changed)
 
@@ -559,12 +571,28 @@ class EventViewer(QMainWindow):
             self.location_selector.addItem(name, loc_id)
         self.location_selector.blockSignals(False)
 
+        names = [self.location_selector.itemText(i) for i in range(self.location_selector.count())]
+        completer = QCompleter(names, self.location_selector)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.location_selector.setCompleter(None)
+        self.location_selector.lineEdit().setCompleter(completer)
+        completer.activated[str].connect(self._on_location_completion_selected)
+
+    def _on_location_completion_selected(self, text: str) -> None:
+        """Navigate to the location chosen via the completer popup."""
+        index = self.location_selector.findText(text)
+        if index >= 0:
+            self.location_selector.setCurrentIndex(index)
+
     def create_command_tree(self):
         """Create the command tree view"""
         self.tree = CommandTreeView()
         self.tree.setMinimumSize(750, 750)
         self.tree.setColumnWidth(0, 70)
         self.tree.setTreePosition(1)
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._on_tree_context_menu)
 
         self._search_results: list[QModelIndex] = []
         self._search_index: int = 0
@@ -713,6 +741,8 @@ class EventViewer(QMainWindow):
     def on_location_changed(self, index: int):
         """Handle location selection changes"""
         location_id = self.location_selector.itemData(index)
+        if location_id is None:
+            return
         self.search_box.blockSignals(True)
         self.search_box.clear()
         self.search_box.blockSignals(False)
@@ -720,6 +750,62 @@ class EventViewer(QMainWindow):
         self._search_index = 0
         self.search_label.setText("0 / 0")
         self.model.change_location(location_id)
+        self.tree.expandAll()
+
+    def _on_tree_context_menu(self, pos: QPoint) -> None:
+        index = self.tree.indexAt(pos)
+        if not index.isValid():
+            return
+        item = index.internalPointer()
+        is_object_node = (item.parent is not None and
+                          item.parent == self.model._root_item)
+        is_function_node = (item.parent is not None and
+                            item.parent.parent == self.model._root_item)
+        menu = QMenu(self)
+
+        if is_object_node:
+            obj_id = self.model._root_item.children.index(item)
+            loc_id = self.location_selector.currentData()
+            script = self.state.backend.get_script(loc_id)
+            has_empty_arb = any(script._function_is_empty(obj_id, f) for f in range(3, 16))
+            if has_empty_arb:
+                act = menu.addAction("Add Function")
+                act.triggered.connect(
+                    lambda checked, oid=obj_id: self.on_add_function_pressed(oid)
+                )
+
+        if is_function_node:
+            object_item = item.parent
+            obj_id = self.model._root_item.children.index(object_item)
+            func_id = getattr(item, 'func_id', None)
+            if func_id is not None and func_id >= 3:
+                act = menu.addAction("Remove Function")
+                act.triggered.connect(
+                    lambda checked, oid=obj_id, fid=func_id: self.on_remove_function_pressed(oid, fid)
+                )
+
+        if not menu.isEmpty():
+            menu.exec(self.tree.viewport().mapToGlobal(pos))
+
+    def on_add_function_pressed(self, obj_id: int) -> None:
+        try:
+            self.model.append_function(obj_id)
+        except IndexError as e:
+            self.command_label.setText(str(e))
+            return
+        self.tree.expandAll()
+        obj_index = self.model.index(obj_id, 0, QModelIndex())
+        obj_item = obj_index.internalPointer()
+        if obj_item and obj_item.children:
+            new_func_row = len(obj_item.children) - 1
+            self.tree.setCurrentIndex(self.model.index(new_func_row, 0, obj_index))
+
+    def on_remove_function_pressed(self, obj_id: int, func_id: int) -> None:
+        try:
+            self.model.remove_function(obj_id, func_id)
+        except ValueError as e:
+            self.command_label.setText(str(e))
+            return
         self.tree.expandAll()
 
     def update_command_tree(self, items: list[CommandItem]):

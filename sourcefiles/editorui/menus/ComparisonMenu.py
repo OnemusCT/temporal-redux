@@ -8,6 +8,9 @@ from PyQt6.QtWidgets import (QComboBox, QLabel, QVBoxLayout, QWidget,
 
 class ComparisonMenu(BaseCommandMenu):
     """Menu for memory comparison operations"""
+    def __init__(self, is_mem_to_mem: bool = False):
+        self._is_mem_to_mem = is_mem_to_mem
+
     def command_widget(self) -> QWidget:
         result = QWidget()
         layout = QVBoxLayout()
@@ -65,6 +68,8 @@ class ComparisonMenu(BaseCommandMenu):
         
         layout.addWidget(self.value_container)
         layout.addWidget(self.mem2_container)
+        self.value_container.setVisible(not self._is_mem_to_mem)
+        self.mem2_container.setVisible(self._is_mem_to_mem)
 
         result.setLayout(layout)
         return result

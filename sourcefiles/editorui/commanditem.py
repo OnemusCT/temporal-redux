@@ -41,12 +41,13 @@ def process_script(script: ctevent.Event) -> list[CommandItem]:
         object_item = CommandItem(f"Object {i:02X}")
 
         for num, function in enumerate(script.get_all_fuctions(i)):
-            func_start = script.get_function_start(i, num)
-            if num > 2 and script.get_function_start(i, num) == script.get_function_start(i, num-1):
-                break
+            if num >= 3 and script._function_is_empty(i, num):
+                continue
 
+            func_start = script.get_function_start(i, num)
             func_name = _get_function_name(num)
             func_item = CommandItem(func_name)
+            func_item.func_id = num
 
             # Build string lookup from the actual commands in this function.
             # Using get_obj_strings would miss strings in commands that fall
