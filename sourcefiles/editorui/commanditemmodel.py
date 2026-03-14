@@ -5,6 +5,21 @@ import editorui.commandtotext as c2t
 from editorui.commanditem import CommandItem, process_script
 from gamebackend import GameBackend
 
+
+def _delete_batch(model: 'CommandModel', indexes: list[QModelIndex]) -> None:
+    """Delete a batch of items correctly when parent and child items may both be selected.
+
+    Sorts all selected items by address descending so that children (which always have
+    higher addresses than their parent's opcode) are deleted before their parents.
+    By the time a conditional parent is processed its children are already gone from the
+    tree, so no erroneous promotion occurs and all bytes are removed from the script.
+    """
+    sorted_indexes = sorted(indexes, key=lambda idx: idx.internalPointer().address, reverse=True)
+    for index in sorted_indexes:
+        if index.isValid():
+            model.delete_command(index)
+
+
 class CommandModel(QAbstractItemModel):
     def __init__(self, root_item: CommandItem, parent=None, backend: GameBackend=None, location_id: int=None):
         super().__init__(parent)
@@ -19,7 +34,12 @@ class CommandModel(QAbstractItemModel):
         """Update an item's command and adjust subsequent addresses based on command size change"""
         if self._backend is not None:
             script = self._backend.get_script(self._location_id)
-            script.replace_command(item.command, new_command, item.address, item.address + len(item.command))
+            # Address-based replacement: insert new bytes then delete the old command.
+            # Avoids the fragility of replace_command's byte-search approach, which
+            # silently does nothing when item.command doesn't exactly match the script
+            # bytes (e.g. platform-specific arg_lens differences).
+            script.insert_commands(new_command.to_bytearray(), item.address)
+            script.delete_commands(item.address + len(new_command), 1)
         # Calculate size difference
         old_size = len(item.command) if item.command else 0
         new_size = len(new_command)
@@ -141,40 +161,41 @@ class CommandModel(QAbstractItemModel):
     def delete_command(self, index: QModelIndex) -> bool:
         """
         Delete the command at the specified index.
-        
+
         Args:
             index: Model index of command to delete
-            
+
         Returns:
             bool: True if deletion was successful
         """
         if not index.isValid():
             return False
-            
+
         item = index.internalPointer()
         parent_item = item.parent
         if parent_item is None:
             return False
-        
+
         if self._backend is not None:
             script = self._backend.get_script(self._location_id)
             script.delete_commands(index.internalPointer().address)
 
         command_size = len(item.command) if item.command else 0
         parent_index = self.parent(index)
-        
+
         # Handle children of deleted item if it's a conditional command
         if item.command.command in EventCommand.conditional_commands and item.children:
             # Find position to promote children to
             item_pos = parent_item.children.index(item)
-            
+
             # Remove the item itself
             self.beginRemoveRows(parent_index, index.row(), index.row())
             parent_item.children.pop(index.row())
             self.endRemoveRows()
-            
+
             # Insert promoted children
-            self.beginInsertRows(parent_index, item_pos, item_pos + len(item.children) - 1)
+            self.beginInsertRows(parent_index, item_pos,
+                                 item_pos + len(item.children) - 1)
             for child in item.children:
                 child.parent = parent_item
             parent_item.children[item_pos:item_pos] = item.children
@@ -184,7 +205,7 @@ class CommandModel(QAbstractItemModel):
             self.beginRemoveRows(parent_index, index.row(), index.row())
             parent_item.children.pop(index.row())
             self.endRemoveRows()
-        
+
         item = index.internalPointer()
         self._update_jump_parameters(item, -command_size)
         self._recalculate_ancestor_jumps(item)
@@ -215,13 +236,10 @@ class CommandModel(QAbstractItemModel):
     def cut_items(self, indexes: list[QModelIndex]) -> list[tuple[CommandItem, int]]:
         """Cut selected items - copy them and then delete them"""
         copied_items = self.copy_items(indexes)
-        
-        # Delete items in reverse order to maintain index validity
-        sorted_indexes = sorted(indexes, key=lambda x: x.row(), reverse=True)
-        for index in sorted_indexes:
-            if index.column() == 0:  # Only process first column
-                self.delete_command(index)
-                
+
+        col0_indexes = [idx for idx in indexes if idx.column() == 0]
+        _delete_batch(self, col0_indexes)
+
         return copied_items
 
     def paste_items(self, items: list[tuple[CommandItem, int]], target_index: QModelIndex):

@@ -246,7 +246,8 @@ class EventCommand:
 
     @staticmethod
     def change_location(location, x_coord, y_coord, facing=0,
-                        unk=0, wait_vblank=True, variant_override=None) -> EventCommand:
+                        unk=0, wait_vblank=True, variant_override=None,
+                        platform: 'Platform' = None) -> EventCommand:
         # There are many different change location commands.  I'll update this
         # as I understand their differences.
         if wait_vblank:
@@ -261,14 +262,19 @@ class EventCommand:
                 cmd = variant_override
 
         ret_cmd = event_commands[cmd].copy()
-        ret_cmd.args = [0, 0, 0]
 
-        ret_cmd.args[0] = (facing & 0x03) << 0xB
-        ret_cmd.args[0] |= (unk & 0x03) << 0x9
-        ret_cmd.args[0] |= location
-
-        ret_cmd.args[1] = x_coord
-        ret_cmd.args[2] = y_coord
+        if platform == Platform.PC:
+            # PC layout: [index u16][facing u8][tile_x u8][tile_y u8]
+            ret_cmd.arg_lens = _PC_ARG_LENS_OVERRIDES[cmd][:]
+            ret_cmd.num_args = len(ret_cmd.arg_lens)
+            ret_cmd.args = [location, facing, x_coord, y_coord]
+        else:
+            ret_cmd.args = [0, 0, 0]
+            ret_cmd.args[0] = (facing & 0x03) << 0xB
+            ret_cmd.args[0] |= (unk & 0x03) << 0x9
+            ret_cmd.args[0] |= location
+            ret_cmd.args[1] = x_coord
+            ret_cmd.args[2] = y_coord
 
         return ret_cmd
 

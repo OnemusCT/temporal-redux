@@ -492,6 +492,52 @@ class TestCommandModel(unittest.TestCase):
         self.assertEqual(len(promoted.children), 1)
         self.assertEqual(promoted.children[0].command.command, grandchild.command)
 
+    def test_delete_batch_conditional_and_all_children(self):
+        """Batch-deleting a conditional and all its children removes everything without promotion."""
+        from editorui.commanditemmodel import _delete_batch
+
+        if_cmd = EventCommand.if_has_item(5, 0)
+        self.model.insert_command(QModelIndex(), 0, if_cmd, 0x100)
+        if_index = self.model.index(0, 0, QModelIndex())
+
+        child_base = 0x100 + len(if_cmd)
+        child1 = EventCommand.end_cmd()
+        child2 = EventCommand.return_cmd()
+        self.model.insert_command(if_index, 0, child1, child_base)
+        self.model.insert_command(if_index, 1, child2, child_base + len(child1))
+
+        if_index = self.model.index(0, 0, QModelIndex())
+        child1_index = self.model.index(0, 0, if_index)
+        child2_index = self.model.index(1, 0, if_index)
+
+        _delete_batch(self.model, [if_index, child1_index, child2_index])
+
+        self.assertEqual(self.model.rowCount(QModelIndex()), 0)
+
+    def test_delete_batch_conditional_and_some_children(self):
+        """Batch-deleting a conditional and only some children promotes the unselected ones."""
+        from editorui.commanditemmodel import _delete_batch
+
+        if_cmd = EventCommand.if_has_item(5, 0)
+        self.model.insert_command(QModelIndex(), 0, if_cmd, 0x100)
+        if_index = self.model.index(0, 0, QModelIndex())
+
+        child_base = 0x100 + len(if_cmd)
+        child1 = EventCommand.end_cmd()
+        child2 = EventCommand.return_cmd()
+        self.model.insert_command(if_index, 0, child1, child_base)
+        self.model.insert_command(if_index, 1, child2, child_base + len(child1))
+
+        if_index = self.model.index(0, 0, QModelIndex())
+        child1_index = self.model.index(0, 0, if_index)
+        # Only child1 is also selected; child2 should be promoted
+
+        _delete_batch(self.model, [if_index, child1_index])
+
+        self.assertEqual(self.model.rowCount(QModelIndex()), 1)
+        promoted = self.model.index(0, 0, QModelIndex()).internalPointer()
+        self.assertEqual(promoted.command.command, child2.command)
+
     def test_update_command_size_increase_shifts_addresses(self):
         """Replacing a command with a larger one shifts subsequent addresses forward."""
         small = EventCommand.end_cmd()         # 1 byte

@@ -737,6 +737,7 @@ class EventViewer(QMainWindow):
                        .get(command_subtype, cm.menu_mapping[EventCommandType.UNASSIGNED][EventCommandSubtype.UNASSIGNED]))
                 
                 self.update_command_menu(menu)
+                self.command_menu.set_platform(self.state.backend.platform)
                 self.command_menu.apply_arguments(item.command.command, item.command.args)
 
                 if item.command.args:
@@ -829,6 +830,7 @@ class EventViewer(QMainWindow):
     def on_update_command(self):
         """Handle command updates"""
         try:
+            self.command_menu.set_platform(self.state.backend.platform)
             new_command = self.command_menu.get_command()
             if new_command.command == 0x1:
                 return

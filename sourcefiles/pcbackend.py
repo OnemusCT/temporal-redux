@@ -5,6 +5,7 @@ import struct
 from pathlib import Path
 
 from sourcefiles.jetsoftime import ctevent, ctstrings
+from sourcefiles.jetsoftime.eventcommand import Platform
 from gamebackend import GameBackend
 from editorui.lookups import locations
 from pcgamedata import (
@@ -246,8 +247,8 @@ class PcBackend(GameBackend):
         self._gd.write(vpath, '\n'.join(lines).encode('utf-8'))
 
     @property
-    def platform(self) -> str:
-        return 'pc'
+    def platform(self) -> Platform:
+        return Platform.PC
 
     @property
     def is_read_only(self) -> bool:

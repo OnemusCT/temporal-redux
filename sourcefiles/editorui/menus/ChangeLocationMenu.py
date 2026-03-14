@@ -1,7 +1,6 @@
 from editorui.menus.BaseCommandMenu import BaseCommandMenu
 from editorui.menus.ValidatingLineEdit import ValidatingLineEdit
-from jetsoftime.eventcommand import EventCommand
-
+from jetsoftime.eventcommand import EventCommand, Platform
 from PyQt6.QtWidgets import QComboBox, QLabel, QVBoxLayout, QWidget, QCheckBox, QHBoxLayout
 from PyQt6.QtCore import Qt
 
@@ -94,15 +93,26 @@ class ChangeLocationMenu(BaseCommandMenu):
             y_coord=y_coord,
             facing=facing,
             unk=unknown,
-            wait_vblank=wait_vblank
+            wait_vblank=wait_vblank,
+            platform=self.platform,
         )
 
     def apply_arguments(self, command: int, args: list):
         if len(args) >= 3:
-            # Extract facing and unknown from first argument
-            facing = (args[0] >> 0xB) & 0x03
-            unknown = (args[0] >> 0x9) & 0x03
-            location = args[0] & 0x1FF
+            if self.platform == Platform.PC and len(args) >= 4:
+                # PC layout: [index u16][facing u8][tile_x u8][tile_y u8]
+                location = args[0]
+                facing = args[1]
+                x_coord = args[2]
+                y_coord = args[3]
+                unknown = 0
+            else:
+                # SNES: facing and unknown are packed into the scene_id u16
+                facing = (args[0] >> 0xB) & 0x03
+                unknown = (args[0] >> 0x9) & 0x03
+                location = args[0] & 0x1FF
+                x_coord = args[1]
+                y_coord = args[2]
 
             # Find and set location in dropdown
             index = self.location.findData(location)
@@ -110,8 +120,8 @@ class ChangeLocationMenu(BaseCommandMenu):
                 self.location.setCurrentIndex(index)
 
             # Set coordinates
-            self.x_coord.set_value(args[1])
-            self.y_coord.set_value(args[2])
+            self.x_coord.set_value(x_coord)
+            self.y_coord.set_value(y_coord)
 
             # Set facing
             self.facing.setCurrentIndex(facing)

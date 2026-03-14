@@ -5,6 +5,7 @@ from pathlib import Path
 from sourcefiles.jetsoftime import ctevent
 from sourcefiles.jetsoftime.ctrom import CTRom
 from sourcefiles.jetsoftime.base import basepatch
+from sourcefiles.jetsoftime.eventcommand import Platform
 
 
 class GameBackend(ABC):
@@ -28,7 +29,7 @@ class GameBackend(ABC):
 
     @property
     @abstractmethod
-    def platform(self) -> str:
+    def platform(self) -> Platform:
         pass
 
     @property
@@ -64,8 +65,8 @@ class SnesBackend(GameBackend):
         path.write_bytes(self._ct_rom.rom_data.getvalue())
 
     @property
-    def platform(self) -> str:
-        return 'snes'
+    def platform(self) -> Platform:
+        return Platform.SNES
 
     @property
     def is_read_only(self) -> bool:

@@ -1,12 +1,17 @@
 from editorui.menus.CommandError import CommandError
 from editorui.menus.ValidatingLineEdit import ValidatingLineEdit
+from jetsoftime.eventcommand import Platform
 
 
 class BaseCommandMenu:
     """Base class for command menus with error handling."""
 
     def __init__(self):
-        pass
+        self.platform: Platform = Platform.SNES
+
+    def set_platform(self, platform: Platform) -> None:
+        """Set the target platform so get_command() can encode accordingly."""
+        self.platform = platform
 
     def validate(self):
         """Validate all inputs. Returns True if valid, False if not."""
