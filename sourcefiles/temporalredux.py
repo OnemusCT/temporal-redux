@@ -82,9 +82,9 @@ def detect_backend(path: Path) -> GameBackend:
     """
     Detect the correct backend for a given path.
 
-    - .smc / .sfc  → SnesBackend
-    - .bin         → PcBackend (resources.bin archive)
-    - directory    → PcBackend (extracted PC data directory)
+    - .smc / .sfc  -> SnesBackend
+    - .bin         -> PcBackend (resources.bin archive)
+    - directory    -> PcBackend (extracted PC data directory)
     """
     if path.is_dir():
         return PcBackend(path)
@@ -121,6 +121,7 @@ class EventViewer(QMainWindow):
         self.setup_ui()
         self.on_location_changed(0)
         self._clipboard_data = None
+        self._differ_window = None
 
     def load_state(self, rom_path: Path):
         try:
@@ -140,20 +141,20 @@ class EventViewer(QMainWindow):
     def create_menu_bar(self):
         """Create the main menu bar with File and Edit menus"""
         menubar = self.menuBar()
-        
+
         file_menu = menubar.addMenu("File")
-        
+
         open_action = file_menu.addAction("Open…")
         open_action.triggered.connect(self.on_open)
 
         save_action = file_menu.addAction("Save")
         save_action.triggered.connect(self.on_save)
-        
+
         save_as_action = file_menu.addAction("Save As")
         save_as_action.triggered.connect(self.on_save_as)
-        
+
         edit_menu = menubar.addMenu("Edit")
-        
+
         cut_action = edit_menu.addAction("Cut")
         cut_action.setShortcut("Ctrl+X")
         cut_action.triggered.connect(self.on_cut)
@@ -161,16 +162,43 @@ class EventViewer(QMainWindow):
         copy_action = edit_menu.addAction("Copy")
         copy_action.setShortcut("Ctrl+C")
         copy_action.triggered.connect(self.on_copy)
-        
+
         paste_action = edit_menu.addAction("Paste")
         paste_action.setShortcut("Ctrl+V")
         paste_action.triggered.connect(self.on_paste)
+
+        tools_menu = menubar.addMenu("Tools")
+
+        differ_action = tools_menu.addAction("Event Differ…")
+        differ_action.triggered.connect(self.on_open_differ)
 
     def on_open(self):
         """Handle Open menu action (SNES ROM, resources.bin, or extracted directory)"""
         path = _open_file_or_directory(self)
         if path:
             self.load_state(path)
+
+    def on_open_differ(self):
+        """Open the Event Differ window."""
+        from editorui.diffwindow import DiffWindow
+
+        def open_callback():
+            path = _open_file_or_directory(self._differ_window)
+            if path is None:
+                return None
+            try:
+                backend = detect_backend(path)
+            except ValueError as e:
+                print(f"Error loading file: {e}")
+                return None
+            return backend, path
+
+        if self._differ_window is None:
+            self._differ_window = DiffWindow(open_callback, self)
+            self._differ_window.load_left(self.state.backend, self.state.file)
+        self._differ_window.show()
+        self._differ_window.raise_()
+        self._differ_window.activateWindow()
 
     def on_save(self):
         """Handle Save menu action"""
@@ -383,29 +411,13 @@ class EventViewer(QMainWindow):
 
     def on_delete_pressed(self):
         """Delete all currently selected commands"""
-        # Get unique rows by filtering for column 0
-        selected_rows = set(index for index in self.tree.selectionModel().selectedIndexes() 
-                          if index.column() == 0)
+        selected_rows = [index for index in self.tree.selectionModel().selectedIndexes()
+                         if index.column() == 0]
         if not selected_rows:
             return
-        
-        
-            
-        # Sort indexes in reverse order to prevent index shifting during deletion
-        sorted_indexes = sorted(selected_rows, key=lambda x: x.row(), reverse=True)
-        
-        # Group indexes by parent to handle multiple deletions correctly
-        parent_groups = {}
-        for index in sorted_indexes:
-            parent = index.parent()
-            if parent not in parent_groups:
-                parent_groups[parent] = []
-            parent_groups[parent].append(index)
-            
-        # Delete commands group by group
-        for parent, indexes in parent_groups.items():
-            for index in indexes:
-                self.model.delete_command(index)
+
+        from editorui.commanditemmodel import _delete_batch
+        _delete_batch(self.model, selected_rows)
 
         is_match, discrepancies = self.compare_tree_with_script()
         if not is_match:

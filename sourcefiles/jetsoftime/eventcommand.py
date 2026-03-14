@@ -80,6 +80,17 @@ _PC_ARG_LENS_OVERRIDES: dict[int, list[int]] = {
     0x47: [],
 }
 
+# Opcodes that only exist on PC (SNES aliases them to 0-arg unknowns / crashes).
+PC_ONLY_OPCODES: frozenset[int] = frozenset({
+    0x3A, 0x3D, 0x3E, 0x45, 0x46, 0x6E, 0x70, 0x74, 0x78, 0xFD,
+})
+
+# Opcodes present on both platforms but with different argument encodings,
+# making automatic cross-platform translation unreliable.
+CROSS_PLATFORM_INCOMPATIBLE_OPCODES: frozenset[int] = frozenset(
+    opcode for opcode in _PC_ARG_LENS_OVERRIDES
+    if opcode not in PC_ONLY_OPCODES
+)
 
 class Operation(IntEnum):
     '''Enum of operations permitted in event commands'''
