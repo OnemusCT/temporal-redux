@@ -474,7 +474,7 @@ _command_to_text = {
     0x2A: "Set bit 0x4 at 7E0154",
     0x2B: "Set bit 0x8 at 7E0154",
     0x2C: "Unknown 0x2C",
-    0x2D: "If(no buttons pressed)",
+    0x2D: "If(any buttons pressed)",
     0x2E: "Color Math (mode: {})",
     0x2F: "Scroll Layers 0x2F",
     0x30: "If(dashing)",
@@ -578,6 +578,7 @@ _command_to_text = {
     0x9F: move_towards_pc,
     0xA0: "Move to ({}, {}, Animated)",
     0xA1: "Move to (0x{:02X}, 0x{:02X}, Animated)",
+    0xA2: "Unknown (PC only)",
     0xA6: "Set NPC facing {:02X}",
     0xA7: "Set NPC facing from 0x{:02X}",
     0xA8: "Face object {:02X}",
@@ -647,6 +648,7 @@ _command_to_text = {
     0xF8: "Restore HP/MP",
     0xF9: "Restore HP",
     0xFA: "Restore MP",
+    0xFD: "Unknown (PC only)",
     0xFE: "Draw geometry",
     0xFF: "Mode 7 scene {:02X}"
 }

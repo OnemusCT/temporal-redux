@@ -763,6 +763,58 @@ class Event:
         return not (self._function_is_empty(obj_id, func_id) or
                     self._function_is_linked(obj_id, func_id))
 
+    def get_link_target(self, obj_id: int, func_id: int) -> tuple[int, int] | None:
+        '''
+        If this function slot is a link (empty or cross-object), return
+        (target_obj_id, target_func_id) of the real function it points to.
+        Returns None if the function is real, or if the link is unresolvable.
+        '''
+        if self._function_is_real(obj_id, func_id):
+            return None
+        target_offset = self.get_function_start(obj_id, func_id)
+        for tgt_obj in range(self.num_objects):
+            for tgt_func in range(16):
+                if (tgt_obj, tgt_func) == (obj_id, func_id):
+                    continue
+                if not self._function_is_real(tgt_obj, tgt_func):
+                    continue
+                if self.get_function_start(tgt_obj, tgt_func) == target_offset:
+                    return (tgt_obj, tgt_func)
+        return None
+
+    def break_function_link(self, obj_id: int, func_id: int) -> None:
+        '''
+        Turn a linked function slot into an empty (non-linked) slot by setting
+        its pointer to match Startup's pointer.  The slot will satisfy
+        _function_is_empty() and no longer satisfy _function_is_linked().
+        '''
+        if func_id == 0:
+            raise ValueError("Startup function cannot be broken.")
+        if self._function_is_real(obj_id, func_id):
+            raise ValueError("Function is not a link.")
+        startup_ptr = self.get_function_start(obj_id, 0)
+        ptr_st = obj_id * 32 + func_id * 2
+        self.data[ptr_st:ptr_st + 2] = int.to_bytes(startup_ptr, 2, 'little')
+
+    def set_function_link(self, obj_id: int, func_id: int,
+                          target_obj_id: int, target_func_id: int) -> None:
+        '''
+        Make a function slot a link to another function's bytecode.
+        If the slot currently has real bytecode it is removed first.
+        Startup (slot 0) cannot be linked.  Target must be a real function.
+        '''
+        if func_id == 0:
+            raise ValueError("Startup function cannot be linked.")
+        if not self._function_is_real(target_obj_id, target_func_id):
+            raise ValueError("Link target must be a real (non-linked) function.")
+        if self._function_is_real(obj_id, func_id):
+            empty_func = EF.from_bytearray(bytearray(), self.platform)
+            self.set_function_new(obj_id, func_id, empty_func)
+        # Re-read target offset; set_function_new may have shifted pointers.
+        target_offset = self.get_function_start(target_obj_id, target_func_id)
+        ptr_st = obj_id * 32 + func_id * 2
+        self.data[ptr_st:ptr_st + 2] = int.to_bytes(target_offset, 2, 'little')
+
     def _get_next_true_start(self, obj_id: int, func_id: int) -> int:
         '''
         Find the start of the next real function (non-empty, non-linked)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 from PyQt6.QtCore import QAbstractItemModel, QModelIndex, Qt, QMimeData
+from PyQt6.QtGui import QBrush, QColor
 from jetsoftime.eventcommand import EventCommand
 import editorui.commandtotext as c2t
 from editorui.commanditem import CommandItem, process_script
@@ -503,7 +504,17 @@ class CommandModel(QAbstractItemModel):
                 return item.name
             elif index.column() == 0:
                 return "0x{:02X}".format(item.address) if item.address is not None else ""
-        
+
+        if role == Qt.ItemDataRole.ForegroundRole and item.is_link:
+            return QBrush(QColor("#888888"))
+
+        if role == Qt.ItemDataRole.ToolTipRole and item.is_link:
+            if item.link_target is not None:
+                from editorui.commanditem import _get_function_name
+                tgt_obj, tgt_func = item.link_target
+                return f"Shares bytecode with Obj {tgt_obj:02X} {_get_function_name(tgt_func)}"
+            return "Unresolved link"
+
         return None
 
     def headerData(self, section: int, orientation: Qt.Orientation, role: Qt.ItemDataRole):
@@ -576,12 +587,16 @@ class CommandModel(QAbstractItemModel):
         seen_modified = False
         for item in all_commands:
             if item.command and item.command.command in EventCommand.fwd_jump_commands and item.command.command not in EventCommand.conditional_commands:
-                jump_target = item.address + item.command.args[-1]
-                if item.command.command != 0x10:
-                    jump_target += len(item.command)
+                jump_target = item.address + len(item.command) + item.command.args[-1] - 1
                 #print("FWD - Modified addr: {:02X}\nJump Start: {:02X}\nJump Target: {:02X}".format(modified_item.address, jump_start, jump_target))
-                # If jump crosses over our modified command, adjust it
-                if item.address < modified_item.address and jump_target > modified_item.address:
+                # If target is AT modified_item, we only push it if this is an insertion.
+                # If it's a deletion/update, the target stays at this address.
+                if insertion:
+                    target_affected = jump_target >= modified_item.address
+                else:
+                    target_affected = jump_target > modified_item.address
+                    
+                if item.address < modified_item.address and target_affected:
                     item.command.args[-1] += size_change
                     
                     # Notify model of change
@@ -592,14 +607,20 @@ class CommandModel(QAbstractItemModel):
                         [Qt.ItemDataRole.DisplayRole]
                     )
             elif item.command and item.command.command == 0x11:
-                jump_target = item.address - item.command.args[0]
-                address_check = item.address > modified_item.address and jump_target < modified_item.address
+                jump_target = item.address + len(item.command) - item.command.args[0] - 1
+                
+                if insertion:
+                    target_affected = jump_target <= modified_item.address
+                else:
+                    target_affected = jump_target < modified_item.address
+                    
+                address_check = item.address > modified_item.address and target_affected
                 # If this is an insertion there will be two items with the same address. The 
                 # inserted item and the item that it was inserted before. We only want
                 # to update the address for the item that was already there so we check
                 # to see if this is the second time we've seen the "modified" address.
                 if insertion and seen_modified:
-                    address_check = item.address >= modified_item.address and jump_target < modified_item.address
+                    address_check = item.address >= modified_item.address and target_affected
                 # If jump crosses over our modified command, adjust it
                 if address_check:
                     item.command.args[0] += size_change
@@ -660,6 +681,21 @@ class CommandModel(QAbstractItemModel):
     def remove_function(self, obj_id: int, func_id: int) -> None:
         script = self._backend.get_script(self._location_id)
         script.remove_function(obj_id, func_id)
+        new_root = CommandItem(name="Root", children=process_script(script))
+        self.replace_items(new_root)
+
+    def break_link(self, obj_id: int, func_id: int) -> None:
+        '''Turn a linked function slot into an empty (non-linked) slot.'''
+        script = self._backend.get_script(self._location_id)
+        script.break_function_link(obj_id, func_id)
+        new_root = CommandItem(name="Root", children=process_script(script))
+        self.replace_items(new_root)
+
+    def convert_to_link(self, obj_id: int, func_id: int,
+                        target_obj_id: int, target_func_id: int) -> None:
+        '''Make a function slot a link to another function's bytecode.'''
+        script = self._backend.get_script(self._location_id)
+        script.set_function_link(obj_id, func_id, target_obj_id, target_func_id)
         new_root = CommandItem(name="Root", children=process_script(script))
         self.replace_items(new_root)
 

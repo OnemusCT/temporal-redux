@@ -9,7 +9,8 @@ from dataclasses import dataclass
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QComboBox, QCompleter, QPushButton, QLabel, QGridLayout,
-    QVBoxLayout, QHBoxLayout, QFileDialog, QDialog, QLineEdit, QMenu
+    QVBoxLayout, QHBoxLayout, QFileDialog, QDialog, QLineEdit, QMenu,
+    QListWidget, QDialogButtonBox
 )
 from PyQt6.QtCore import Qt, QModelIndex, QPoint, pyqtSlot
 from PyQt6.QtGui import QShortcut, QKeySequence
@@ -24,6 +25,49 @@ from editorui.commandtreeview import CommandTreeView
 from editorui.commanditem import CommandItem, process_script
 from editorui.menus.BaseCommandMenu import BaseCommandMenu
 from editorui.menus.UnassignedMenu import UnassignedMenu
+
+
+class _LinkTargetDialog(QDialog):
+    '''Dialog for selecting a link target function from the current script.'''
+
+    def __init__(self, script, source_obj_id: int, source_func_id: int, parent=None):
+        super().__init__(parent)
+        from editorui.commanditem import _get_function_name
+        self.setWindowTitle("Select Link Target")
+        self.setMinimumWidth(300)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Link to which function?"))
+
+        self._list = QListWidget()
+        self._targets: list[tuple[int, int]] = []
+
+        for obj_id in range(script.num_objects):
+            for func_id in range(16):
+                if (obj_id, func_id) == (source_obj_id, source_func_id):
+                    continue
+                if not script._function_is_real(obj_id, func_id):
+                    continue
+                label = f"Obj {obj_id:02X} {_get_function_name(func_id)}"
+                self._list.addItem(label)
+                self._targets.append((obj_id, func_id))
+
+        if self._list.count() > 0:
+            self._list.setCurrentRow(0)
+        layout.addWidget(self._list)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def selected_target(self) -> tuple[int, int] | None:
+        row = self._list.currentRow()
+        if row < 0 or row >= len(self._targets):
+            return None
+        return self._targets[row]
 
 
 def _open_file_or_directory(parent=None) -> Optional[Path]:
@@ -796,6 +840,16 @@ class EventViewer(QMainWindow):
                 act.triggered.connect(
                     lambda checked, oid=obj_id, fid=func_id: self.on_remove_function_pressed(oid, fid)
                 )
+            if func_id is not None and item.is_link and item.link_target is not None:
+                act = menu.addAction("Break Link")
+                act.triggered.connect(
+                    lambda checked, oid=obj_id, fid=func_id: self.on_break_link_pressed(oid, fid)
+                )
+            if func_id is not None and not item.is_link and func_id != 0:
+                act = menu.addAction("Convert to Link\u2026")
+                act.triggered.connect(
+                    lambda checked, oid=obj_id, fid=func_id: self.on_convert_to_link_pressed(oid, fid)
+                )
 
         if not menu.isEmpty():
             menu.exec(self.tree.viewport().mapToGlobal(pos))
@@ -816,6 +870,31 @@ class EventViewer(QMainWindow):
     def on_remove_function_pressed(self, obj_id: int, func_id: int) -> None:
         try:
             self.model.remove_function(obj_id, func_id)
+        except ValueError as e:
+            self.command_label.setText(str(e))
+            return
+        self.tree.expandAll()
+
+    def on_break_link_pressed(self, obj_id: int, func_id: int) -> None:
+        try:
+            self.model.break_link(obj_id, func_id)
+        except ValueError as e:
+            self.command_label.setText(str(e))
+            return
+        self.tree.expandAll()
+
+    def on_convert_to_link_pressed(self, obj_id: int, func_id: int) -> None:
+        loc_id = self.location_selector.currentData()
+        script = self.state.backend.get_script(loc_id)
+        dialog = _LinkTargetDialog(script, obj_id, func_id, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        target = dialog.selected_target()
+        if target is None:
+            return
+        tgt_obj, tgt_func = target
+        try:
+            self.model.convert_to_link(obj_id, func_id, tgt_obj, tgt_func)
         except ValueError as e:
             self.command_label.setText(str(e))
             return

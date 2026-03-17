@@ -12,6 +12,8 @@ class CommandItem:
         self.address = address
         self.children = children if children is not None else []
         self.parent = None
+        self.is_link: bool = False
+        self.link_target: tuple[int, int] | None = None  # (obj_id, func_id)
 
     def add_child(self, child: CommandItem):
         child.parent = self
@@ -41,7 +43,27 @@ def process_script(script: ctevent.Event) -> list[CommandItem]:
         object_item = CommandItem(f"Object {i:02X}")
 
         for num, function in enumerate(script.get_all_fuctions(i)):
-            if num >= 3 and script._function_is_empty(i, num):
+            is_empty = script._function_is_empty(i, num)
+            is_linked = script._function_is_linked(i, num)
+
+            if is_empty or is_linked:
+                target = script.get_link_target(i, num)
+                # Hide unresolvable arbitrary slots to reduce noise
+                if target is None and num >= 3:
+                    continue
+                func_name = _get_function_name(num)
+                if target is not None:
+                    tgt_obj, tgt_func = target
+                    display_name = (f"{func_name} \u2192 Link to "
+                                    f"Obj {tgt_obj:02X} {_get_function_name(tgt_func)}")
+                else:
+                    display_name = f"{func_name} \u2192 Link (unresolved)"
+                func_item = CommandItem(display_name)
+                func_item.func_id = num
+                func_item.is_link = True
+                func_item.link_target = target
+                func_item.parent = object_item
+                object_item.add_child(func_item)
                 continue
 
             func_start = script.get_function_start(i, num)
@@ -64,10 +86,10 @@ def process_script(script: ctevent.Event) -> list[CommandItem]:
             for child in children:
                 child.parent = func_item
             func_item.add_children(children)
-            
+
             func_item.parent = object_item
             object_item.add_child(func_item)
-            
+
         result.append(object_item)
     return result
 

@@ -454,16 +454,21 @@ class DiffWindow(QMainWindow):
 
         target_event = target_backend.get_script(loc_id)
 
-        # Sort lines by target address descending so insertions don't shift
-        # addresses of subsequent operations.
+        # Sort lines by target address descending so modifications/deletions
+        # don't shift addresses of subsequent operations.
+        # Insertion-only lines (no target address) are sorted by source address
+        # descending: processing last-to-first means each insert goes to the
+        # same slot, stacking them into correct forward order.
         def sort_key(dl: DiffLine) -> int:
             if direction == _Direction.LEFT_TO_RIGHT:
-                addr = dl.right_address
+                target_addr = dl.right_address
+                source_addr = dl.left_address
             else:
-                addr = dl.left_address
-            # One-sided lines have no target address; use a context-derived one.
-            # Assign -1 so they sort last (processed first in reverse).
-            return addr if addr is not None else -1
+                target_addr = dl.left_address
+                source_addr = dl.right_address
+            if target_addr is not None:
+                return target_addr
+            return source_addr if source_addr is not None else -1
 
         sorted_lines = sorted(lines, key=sort_key, reverse=True)
 

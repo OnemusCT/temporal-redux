@@ -78,11 +78,13 @@ _PC_ARG_LENS_OVERRIDES: dict[int, list[int]] = {
     0xFD: [1],
     # 0x47: LimitAnimations — SNES uses 1 arg byte; PC is a 0-arg NOP
     0x47: [],
+    # 0xA2: SNES alias of 0x01 (crash, 0 args); PC takes 6 one-byte args
+    0xA2: [1, 1, 1, 1, 1, 1],
 }
 
 # Opcodes that only exist on PC (SNES aliases them to 0-arg unknowns / crashes).
 PC_ONLY_OPCODES: frozenset[int] = frozenset({
-    0x3A, 0x3D, 0x3E, 0x45, 0x46, 0x6E, 0x70, 0x74, 0x78, 0xFD,
+    0x3A, 0x3D, 0x3E, 0x45, 0x46, 0x6E, 0x70, 0x74, 0x78, 0xFD, 0xA2,
 })
 
 # Opcodes present on both platforms but with different argument encodings,
