@@ -1,9 +1,10 @@
 from __future__ import annotations
 from PyQt6.QtCore import QAbstractItemModel, QModelIndex, Qt, QMimeData
-from PyQt6.QtGui import QBrush, QColor
+from PyQt6.QtGui import QBrush, QColor, QFont
 from jetsoftime.eventcommand import EventCommand
 import editorui.commandtotext as c2t
 from editorui.commanditem import CommandItem, process_script
+from editorui.activitylog import ActivityLog
 from gamebackend import GameBackend
 
 
@@ -14,8 +15,12 @@ def _delete_batch(model: 'CommandModel', indexes: list[QModelIndex]) -> None:
     higher addresses than their parent's opcode) are deleted before their parents.
     By the time a conditional parent is processed its children are already gone from the
     tree, so no erroneous promotion occurs and all bytes are removed from the script.
+    Object nodes (address=None) sort first so delete_object runs before any child commands.
     """
-    sorted_indexes = sorted(indexes, key=lambda idx: idx.internalPointer().address, reverse=True)
+    def sort_key(idx):
+        addr = idx.internalPointer().address
+        return addr if addr is not None else float('inf')
+    sorted_indexes = sorted(indexes, key=sort_key, reverse=True)
     for index in sorted_indexes:
         if index.isValid():
             model.delete_command(index)
@@ -27,12 +32,34 @@ class CommandModel(QAbstractItemModel):
         self._root_item = root_item
         self._backend = backend
         self._location_id = location_id
+        self._log: ActivityLog | None = None
+        self._suppress_log: bool = False
+        self._suppress_idle_refresh: bool = False
 
     def set_backend(self, backend: GameBackend) -> None:
         self._backend = backend
 
+    def set_log(self, log: ActivityLog | None) -> None:
+        self._log = log
+
+    @staticmethod
+    def _item_context(item: CommandItem) -> str:
+        """Return a breadcrumb path for the item's parent chain, e.g. 'Object 0C > Startup / Idle'."""
+        parts = []
+        node = item.parent
+        while node is not None and node.parent is not None:
+            parts.append(node.name)
+            node = node.parent
+        return " > ".join(reversed(parts))
+
     def update_command(self, item: CommandItem, new_command: EventCommand):
         """Update an item's command and adjust subsequent addresses based on command size change"""
+        if self._log is not None:
+            self._log.log_command_update(
+                self._location_id, item.address,
+                item.command, new_command,
+                self._item_context(item),
+            )
         if self._backend is not None:
             script = self._backend.get_script(self._location_id)
             # Address-based replacement: insert new bytes then delete the old command.
@@ -134,6 +161,13 @@ class CommandModel(QAbstractItemModel):
             script = self._backend.get_script(self._location_id)
             script.insert_commands(command.to_bytearray(), address)
         parent_item = self._root_item if not parent_index.isValid() else parent_index.internalPointer()
+        if self._log is not None and not self._suppress_log:
+            # Build a temporary item to get context; parent_item is the container.
+            _ctx_item = CommandItem("", command, address)
+            _ctx_item.parent = parent_item
+            self._log.log_command_insert(
+                self._location_id, address, command, self._item_context(_ctx_item)
+            )
         
         # Create new command item
         new_item = CommandItem(
@@ -157,6 +191,8 @@ class CommandModel(QAbstractItemModel):
         
         # End insertion process
         self.endInsertRows()
+        if not self._suppress_idle_refresh:
+            self._refresh_idle_label(self._get_func_node(parent_item))
         return True
 
     def delete_command(self, index: QModelIndex) -> bool:
@@ -173,9 +209,42 @@ class CommandModel(QAbstractItemModel):
             return False
 
         item = index.internalPointer()
+        if item.is_section_label:
+            return False
+
         parent_item = item.parent
         if parent_item is None:
             return False
+
+        if self._log is not None and not self._suppress_log and item.command is not None:
+            self._log.log_command_delete(
+                self._location_id, item.address, item.command, self._item_context(item)
+            )
+
+        func_node = self._get_func_node(item)
+
+        # Handle object node deletion (command is None, parent is root)
+        if item.command is None and parent_item == self._root_item:
+            obj_id = index.row()
+            obj_len = 0
+            if self._backend is not None:
+                script = self._backend.get_script(self._location_id)
+                obj_start = script.get_object_start(obj_id)
+                obj_end = script.get_object_end(obj_id)
+                obj_len = obj_end - obj_start
+                script.delete_object(obj_id)
+            parent_index = self.parent(index)
+            self.beginRemoveRows(parent_index, index.row(), index.row())
+            parent_item.children.pop(index.row())
+            self.endRemoveRows()
+            # Adjust addresses of all remaining objects: objects that were before the
+            # deleted one shift by -32 (pointer table removed); objects after shift by
+            # -(32 + obj_len) (pointer table + bytecode removed).
+            for i, object_node in enumerate(self._root_item.children):
+                original_obj_id = i if i < obj_id else i + 1
+                addr_shift = -32 if original_obj_id < obj_id else -(32 + obj_len)
+                self._shift_subtree_addresses(object_node, addr_shift)
+            return True
 
         if self._backend is not None:
             script = self._backend.get_script(self._location_id)
@@ -185,7 +254,7 @@ class CommandModel(QAbstractItemModel):
         parent_index = self.parent(index)
 
         # Handle children of deleted item if it's a conditional command
-        if item.command.command in EventCommand.conditional_commands and item.children:
+        if item.command and item.command.command in EventCommand.conditional_commands and item.children:
             # Find position to promote children to
             item_pos = parent_item.children.index(item)
 
@@ -211,27 +280,35 @@ class CommandModel(QAbstractItemModel):
         self._update_jump_parameters(item, -command_size)
         self._recalculate_ancestor_jumps(item)
         self._update_addresses(item, -command_size)
+        self._refresh_idle_label(func_node)
         return True
 
     def copy_items(self, indexes: list[QModelIndex]) -> list[tuple[CommandItem, int]]:
         """Copy selected items and return list of (item, address_offset) tuples"""
         if not indexes:
             return []
-            
-        # Get base address for calculating offsets
-        base_addr = min(idx.internalPointer().address for idx in indexes if idx.column() == 0)
-        
-        # Create deep copies of selected items with relative addresses
+
+        col0 = [idx for idx in indexes if idx.column() == 0]
+        selected_items = {idx.internalPointer() for idx in col0}
+
+        # Only copy root-level selections — children of a selected conditional are
+        # already included via the parent's deep copy; copying them separately would
+        # produce duplicates and flatten the tree structure.
+        root_indexes = [idx for idx in col0
+                        if idx.internalPointer().parent not in selected_items]
+
+        if not root_indexes:
+            return []
+
+        base_addr = min(idx.internalPointer().address for idx in root_indexes)
+
         copied_items = []
-        for index in indexes:
-            if index.column() == 0:  # Only process first column
-                item = index.internalPointer()
-                # Deep copy the item and its children
-                copied_item = self._deep_copy_item(item)
-                # Calculate address offset from base
-                addr_offset = item.address - base_addr
-                copied_items.append((copied_item, addr_offset))
-                
+        for index in root_indexes:
+            item = index.internalPointer()
+            copied_item = self._deep_copy_item(item)
+            addr_offset = item.address - base_addr
+            copied_items.append((copied_item, addr_offset))
+
         return copied_items
 
     def cut_items(self, indexes: list[QModelIndex]) -> list[tuple[CommandItem, int]]:
@@ -247,32 +324,63 @@ class CommandModel(QAbstractItemModel):
         """Paste copied/cut items at the target location"""
         if not items:
             return
-            
-        # Get target item and insertion position
+
         target_item = target_index.internalPointer() if target_index.isValid() else self._root_item
-        
-        # Determine insert position and parent based on target
+
         if target_item.command and target_item.command.command in EventCommand.conditional_commands:
-            # Pasting onto conditional command - insert at start of children
             target_parent = target_item
             insert_pos = 0
             insert_address = target_item.address + len(target_item.command)
         else:
-            # Pasting after target item
             target_parent = target_item.parent if target_item.parent else self._root_item
             insert_pos = target_parent.children.index(target_item) + 1
             insert_address = target_item.address + len(target_item.command)
-        
-        # Insert items maintaining relative positioning
-        for item, offset in items:
-            addr = insert_address + offset
-            self.insert_command(
-                self.get_index_for_item(target_parent),
-                insert_pos,
-                item.command,
-                addr
-            )
-            insert_pos += 1
+
+        parent_index = self.get_index_for_item(target_parent)
+        self._suppress_idle_refresh = True
+        try:
+            for item, offset in items:
+                self._paste_recursive(item, parent_index, insert_pos, insert_address + offset)
+                insert_pos += 1
+        finally:
+            self._suppress_idle_refresh = False
+            self._refresh_idle_label(self._get_func_node(target_parent))
+
+    def _paste_recursive(self, copied_item: CommandItem, parent_index: QModelIndex,
+                         position: int, address: int) -> None:
+        """Insert a copied item and recursively insert its children under it."""
+        self.insert_command(parent_index, position, copied_item.command, address)
+        if not copied_item.children:
+            return
+        parent_item = parent_index.internalPointer() if parent_index.isValid() else self._root_item
+        new_item = parent_item.children[position]
+        new_index = self.index(position, 0, parent_index)
+        child_address = address + len(copied_item.command)
+        for i, child in enumerate(copied_item.children):
+            self._paste_recursive(child, new_index, i, child_address)
+            child_address += self._subtree_size(child)
+
+    def _subtree_size(self, item: CommandItem) -> int:
+        """Total byte size of an item and all its descendants."""
+        if item.command is None:
+            return 0
+        size = len(item.command)
+        for child in item.children:
+            size += self._subtree_size(child)
+        return size
+
+    def _delete_subtree(self, item: CommandItem) -> None:
+        """Delete an item and all its descendants without promoting children.
+
+        Deletes children deepest-first (highest address first) so that by the
+        time a conditional parent is processed it has no children and
+        delete_command will not trigger promotion.
+        """
+        for child in sorted(item.children, key=lambda c: c.address or 0, reverse=True):
+            self._delete_subtree(child)
+        idx = self.get_index_for_item(item)
+        if idx.isValid():
+            self.delete_command(idx)
 
     def _deep_copy_item(self, item: CommandItem) -> CommandItem:
         """Create a deep copy of a CommandItem and its children"""
@@ -296,6 +404,50 @@ class CommandModel(QAbstractItemModel):
             new_item.children.append(child_copy)
             
         return new_item
+
+    def _get_func_node(self, item: CommandItem) -> CommandItem | None:
+        """Walk up the tree to find the nearest ancestor that is a function node."""
+        node = item
+        while node is not None:
+            if hasattr(node, 'func_id'):
+                return node
+            node = node.parent
+        return None
+
+    def _refresh_idle_label(self, func_node: CommandItem | None) -> None:
+        """After any structural change to a Startup/Idle function, reposition the Idle label."""
+        if func_node is None or not hasattr(func_node, 'func_id') or func_node.func_id != 0:
+            return
+        func_index = self.get_index_for_item(func_node)
+        # Remove any existing section label
+        for i, child in enumerate(func_node.children):
+            if child.is_section_label:
+                self.beginRemoveRows(func_index, i, i)
+                func_node.children.pop(i)
+                self.endRemoveRows()
+                break
+        # Find first top-level Return (0x00) and insert the label after it
+        for idx, child in enumerate(func_node.children):
+            if child.command is not None and child.command.command == 0x00:
+                if idx + 1 < len(func_node.children):
+                    sep = CommandItem("─── Idle ───")
+                    sep.is_section_label = True
+                    sep.parent = func_node
+                    insert_pos = idx + 1
+                    self.beginInsertRows(func_index, insert_pos, insert_pos)
+                    func_node.children.insert(insert_pos, sep)
+                    self.endInsertRows()
+                break
+
+    def _shift_subtree_addresses(self, node: CommandItem, shift: int) -> None:
+        """Recursively shift the address of every item in a subtree by shift bytes.
+        Regenerates display names for commands whose text embeds the item's address (0x10, 0x11)."""
+        if node.address is not None:
+            node.address += shift
+            if node.command is not None and node.command.command in (0x10, 0x11):
+                node.name = c2t.command_to_text(node.command, node.address, [])
+        for child in node.children:
+            self._shift_subtree_addresses(child, shift)
 
     def _update_addresses(self,  modified_item: CommandItem, size_change: int, insertion: bool = False):
         all_commands = _get_all_commands(self._root_item)
@@ -365,7 +517,9 @@ class CommandModel(QAbstractItemModel):
             return False
             
         # Get target item
-        target_item = parent.internalPointer() if parent.isValid() else self._root
+        target_item = parent.internalPointer() if parent.isValid() else self._root_item
+        if getattr(target_item, 'is_section_label', False):
+            return False
         
         # Check if any dragged item is an ancestor of the target
         for (item, _) in self._drag_items:
@@ -388,12 +542,25 @@ class CommandModel(QAbstractItemModel):
         # Get target item and dragged items
         target_item = parent.internalPointer() if parent.isValid() else self._root_item
         
-        # Remove items from their current positions
-        items_to_move = []
-        for (item, index) in self._drag_items:
-            if item.parent:
-                self.delete_command(index)
-                items_to_move.append((item, len(item.command)))
+        # Filter to root-level items only (exclude children of selected parents)
+        drag_item_set = {item for item, _ in self._drag_items}
+        root_drag = [(item, idx) for item, idx in self._drag_items
+                     if item.parent and item.parent not in drag_item_set]
+
+        # Capture source info and deep-copy subtrees BEFORE any deletion
+        move_sources = [(item.address, self._item_context(item)) for item, _ in root_drag]
+        deep_copies = [self._deep_copy_item(item) for item, _ in root_drag]
+
+        # Delete subtrees highest-address-first so address shifts don't invalidate
+        # later deletions; suppress log and idle-label refresh during deletion phase
+        self._suppress_log = True
+        self._suppress_idle_refresh = True
+        for item, _ in sorted(root_drag, key=lambda x: x[0].address or 0, reverse=True):
+            self._delete_subtree(item)
+        self._suppress_log = False
+        self._suppress_idle_refresh = False
+
+        items_to_move = list(zip(deep_copies, move_sources))
         # Determine insert position and parent
         if target_item.command and target_item.command.command in EventCommand.conditional_commands:
             # Case 1: Dropping onto a conditional command - insert at beginning of its children
@@ -401,19 +568,45 @@ class CommandModel(QAbstractItemModel):
             insert_pos = 0
             # Calculate insert address - should be right after the conditional command
             insert_address = target_item.address + len(target_item.command)
+        elif target_item.command is None:
+            # Case 2: Dropping onto a structural node (function/object header) with no command
+            # Insert at the beginning of its children
+            target_parent = target_item
+            insert_pos = 0
+            if target_item.children:
+                insert_address = target_item.children[0].address
+            else:
+                insert_address = target_item.address
         else:
-            # Case 2: Dropping after a command - insert after it in its parent
+            # Case 3: Dropping after a command - insert after it in its parent
             target_parent = target_item.parent if target_item.parent else self._root_item
             insert_pos = target_parent.children.index(target_item) + 1
             # Calculate insert address - should be after the target item
             insert_address = target_item.address + len(target_item.command)
 
-        # Insert items at new position
+        # Insert subtrees at new position; suppress idle-label refresh until done
+        parent_index = self.get_index_for_item(target_parent)
+        self._suppress_log = True
+        self._suppress_idle_refresh = True
         current_address = insert_address
-        for item, command_size in items_to_move:
-            self.insert_command(self.get_index_for_item(target_parent), insert_pos, item.command, current_address)
-            current_address += command_size
+        for deep_copy, (src_address, src_context) in items_to_move:
+            self._paste_recursive(deep_copy, parent_index, insert_pos, current_address)
             insert_pos += 1
+            current_address += self._subtree_size(deep_copy)
+        self._suppress_log = False
+        self._suppress_idle_refresh = False
+        self._refresh_idle_label(self._get_func_node(target_parent))
+
+        # Log one move entry per root item
+        current_address = insert_address
+        for deep_copy, (src_address, src_context) in items_to_move:
+            if self._log is not None:
+                self._log.log_command_move(
+                    self._location_id, src_address, current_address,
+                    deep_copy.command, src_context,
+                )
+            current_address += self._subtree_size(deep_copy)
+
         print_command_tree(self)
         return True
 
@@ -499,6 +692,17 @@ class CommandModel(QAbstractItemModel):
 
         item: CommandItem = index.internalPointer()
 
+        if item.is_section_label:
+            if role == Qt.ItemDataRole.DisplayRole:
+                return item.name if index.column() == 1 else ""
+            if role == Qt.ItemDataRole.ForegroundRole:
+                return QBrush(QColor("#888888"))
+            if role == Qt.ItemDataRole.FontRole:
+                font = QFont()
+                font.setItalic(True)
+                return font
+            return None
+
         if role == Qt.ItemDataRole.DisplayRole:
             if index.column() == 1:
                 return item.name
@@ -525,6 +729,9 @@ class CommandModel(QAbstractItemModel):
     def flags(self, index: QModelIndex) -> Qt.ItemFlag:
         if not index.isValid():
             return Qt.ItemFlag.NoItemFlags
+
+        if index.internalPointer().is_section_label:
+            return Qt.ItemFlag.ItemIsEnabled
 
         return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
 

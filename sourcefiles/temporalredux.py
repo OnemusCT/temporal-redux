@@ -25,6 +25,7 @@ from editorui.commandtreeview import CommandTreeView
 from editorui.commanditem import CommandItem, process_script
 from editorui.menus.BaseCommandMenu import BaseCommandMenu
 from editorui.menus.UnassignedMenu import UnassignedMenu
+from editorui.activitylog import ActivityLog
 
 
 class _LinkTargetDialog(QDialog):
@@ -161,11 +162,18 @@ class EventViewer(QMainWindow):
             file=rom_path,
             backend=backend,
         )
+        self._log = ActivityLog()
+        self._log.log_file_open(str(rom_path))
         self.setWindowFlags(Qt.WindowType.Window)
         self.setup_ui()
+        self.model.set_log(self._log)
         self.on_location_changed(0)
         self._clipboard_data = None
         self._differ_window = None
+
+    def closeEvent(self, event):
+        self._log.close()
+        super().closeEvent(event)
 
     def load_state(self, rom_path: Path):
         try:
@@ -178,6 +186,7 @@ class EventViewer(QMainWindow):
             file=rom_path,
             backend=backend,
         )
+        self._log.log_file_open(str(rom_path))
         self.model.set_backend(backend)
         self._populate_location_selector()
         self.on_location_changed(0)
@@ -261,6 +270,7 @@ class EventViewer(QMainWindow):
         self.model.change_location(location_id)
         self.tree.expandAll()
         self.state.backend.save_to_file(self.state.file)
+        self._log.log_file_save(str(self.state.file))
 
     def on_save_as(self):
         """Handle Save As menu action"""
@@ -289,6 +299,7 @@ class EventViewer(QMainWindow):
             self.model.change_location(location_id)
             self.tree.expandAll()
             self.state.backend.save_to_file(Path(dest))
+            self._log.log_file_save(dest)
 
     def on_copy(self):
         """Handle Copy menu action"""
@@ -297,7 +308,11 @@ class EventViewer(QMainWindow):
             return
             
         self._clipboard_data = self.model.copy_items(selected_indexes)
-        
+        self._log.log_copy(
+            self.location_selector.currentData(),
+            [ActivityLog._cmd_dict(item.command) for item, _ in self._clipboard_data],
+        )
+
         # Validate tree state after copy
         is_match, discrepancies = self.compare_tree_with_script()
         if not is_match:
@@ -330,8 +345,15 @@ class EventViewer(QMainWindow):
         if not current_index.isValid():
             return
             
+        target_item = current_index.internalPointer()
+        self._log.log_paste(
+            self.location_selector.currentData(),
+            target_item.address if target_item.address is not None else 0,
+            CommandModel._item_context(target_item),
+            [ActivityLog._cmd_dict(item.command) for item, _ in self._clipboard_data],
+        )
         self.model.paste_items(self._clipboard_data, current_index)
-        
+
         # Validate tree state after paste
         is_match, discrepancies = self.compare_tree_with_script()
         if not is_match:
@@ -782,6 +804,7 @@ class EventViewer(QMainWindow):
                 
                 self.update_command_menu(menu)
                 self.command_menu.set_platform(self.state.backend.platform)
+                self.command_menu.set_address(item.address)
                 self.command_menu.apply_arguments(item.command.command, item.command.args)
 
                 if item.command.args:
@@ -800,6 +823,7 @@ class EventViewer(QMainWindow):
         location_id = self.location_selector.itemData(index)
         if location_id is None:
             return
+        self._log.log_location_change(location_id)
         self.search_box.blockSignals(True)
         self.search_box.clear()
         self.search_box.blockSignals(False)
@@ -1085,12 +1109,18 @@ class EventViewer(QMainWindow):
                 - list[str]: List of discrepancy descriptions if trees don't match
         """
         current_tree_root = self.model._root_item
-        
-        processed_items = process_script(self.state.backend.get_script(self.location_selector.currentData()))
-        
+        location_id = self.location_selector.currentData()
+
+        processed_items = process_script(self.state.backend.get_script(location_id))
+
         discrepancies = []
         is_match = self._compare_items(current_tree_root.children, processed_items, [], discrepancies)
-        
+
+        if not is_match:
+            import traceback
+            trigger = "".join(traceback.format_stack(limit=4)[:-1]).strip()
+            self._log.log_tree_discrepancy(location_id, discrepancies, trigger)
+
         return is_match, discrepancies
 
 def main():
