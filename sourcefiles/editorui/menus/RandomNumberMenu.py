@@ -14,7 +14,7 @@ class RandomNumberMenu(BaseCommandMenu):
         self.address = ValidatingLineEdit(min_value=0x7F0200, max_value=0x7F0400)
 
         layout.addWidget(address_label)
-        layout.addWidget(self.offset)
+        layout.addWidget(self.address)
         result.setLayout(layout)
         return result
 

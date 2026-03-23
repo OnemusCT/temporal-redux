@@ -8,6 +8,11 @@ class BaseCommandMenu:
 
     def __init__(self):
         self.platform: Platform = Platform.SNES
+        self._current_address: int | None = None
+
+    def set_address(self, address: int | None) -> None:
+        """Set the address of the command being edited, used by menus that need it."""
+        self._current_address = address
 
     def set_platform(self, platform: Platform) -> None:
         """Set the target platform so get_command() can encode accordingly."""

@@ -13,6 +13,7 @@ class CommandItem:
         self.children = children if children is not None else []
         self.parent = None
         self.is_link: bool = False
+        self.is_section_label: bool = False
         self.link_target: tuple[int, int] | None = None  # (obj_id, func_id)
 
     def add_child(self, child: CommandItem):
@@ -83,6 +84,16 @@ def process_script(script: ctevent.Event) -> list[CommandItem]:
             }
 
             children, _ = _create_command_list(function.commands, func_strings, func_start)
+
+            if num == 0:
+                for idx, child in enumerate(children):
+                    if child.command is not None and child.command.command == 0x00:
+                        if idx + 1 < len(children):
+                            sep = CommandItem("─── Idle ───")
+                            sep.is_section_label = True
+                            children.insert(idx + 1, sep)
+                        break
+
             for child in children:
                 child.parent = func_item
             func_item.add_children(children)
@@ -96,7 +107,7 @@ def process_script(script: ctevent.Event) -> list[CommandItem]:
 def _get_function_name(num: int) -> str:
     """Get the function name based on its number"""
     if num == 0:
-        return "Startup"
+        return "Startup / Idle"
     elif num == 1:
         return "Activate" 
     elif num == 2:
@@ -126,11 +137,14 @@ def _create_command_list(commands, strings, bytes=0):
                 if i >= len(commands):
                     break
                 bytes_to_jump -= len(commands[i])
-            end = i
+            if bytes_to_jump == 0:
+                end = i + 1  # loop hit exact boundary; last command is a child
+            else:
+                end = i      # loop overshot; last command is not a child
+                i -= 1
             (child_items, skipped_bytes) = _create_command_list(commands[start:end], strings, curr_bytes+command_bytes)
             item.add_children(child_items)
             curr_bytes += skipped_bytes
-            i-=1
         items.append(item)
         curr_bytes += command_bytes
         i+=1

@@ -86,10 +86,10 @@ def if_local_address(args) -> str:
     return "If({} {} 0x{:02X})".format(local_address_offset(args[0]), operation_to_str(args[2]), address_offset(args[1]))
 
 def if_visible(args) -> str:
-    return "If(Obj{} visible)".format(val_to_obj(args[0]))
+    return "If(Obj{:02X} visible)".format(val_to_obj(args[0]))
 
 def if_battle_range(args) ->str:
-    return "If(Obj{} in battle range)".format(val_to_obj(args[0]))
+    return "If(Obj{:02X} in battle range)".format(val_to_obj(args[0]))
 
 def get_result_7f0200(args) -> str:
     return "Get Result({})".format(address_offset(args[0]))
@@ -101,13 +101,13 @@ def load_pc(args) -> str:
     return "Load PC1 into {}".format(address_offset(args[0]))
 
 def load_obj_coords(args) -> str:
-    return "Load Obj{} Coords into {},{}".format(val_to_obj(args[0]), address_offset(args[1]), address_offset(args[2]))
+    return "Load Obj{:02X} Coords into {},{}".format(val_to_obj(args[0]), address_offset(args[1]), address_offset(args[2]))
 
 def load_pc_coords(args) -> str:
     return "Load {} Coords into {},{}".format(get_pc(val_to_obj(args[0])), address_offset(args[1]), address_offset(args[2]))
 
 def load_obj_facing(args) -> str:
-    return "Load Obj{} Facing into {}".format(val_to_obj(args[0]), address_offset(args[1]))
+    return "Load Obj{:02X} Facing into {}".format(val_to_obj(args[0]), address_offset(args[1]))
 
 def load_pc_facing(args) -> str:
     return "Load {} Facing into {}".format(get_pc(val_to_obj(args[0])), address_offset(args[1]))
@@ -387,7 +387,7 @@ def call_event(args, type, sync) -> str:
     priority = args[1] & 0xF0
     priority /= 0x10
     func = _get_function_name(args[1] & 0xF)
-    return "Call({}{}, {}, {}, {})".format(type, val_to_obj(args[0]),priority ,func, sync)
+    return "Call({}{:02X}, {}, {}, {})".format(type, val_to_obj(args[0]),priority ,func, sync)
 
 # PC-only extended-memory ops. In SNES mode these commands have 0 args and
 # show "Color Crash"; in PC mode they have args that identify the operation.
