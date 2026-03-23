@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QComboBox, QCompleter, QPushButton, QLabel, QGridLayout,
     QVBoxLayout, QHBoxLayout, QFileDialog, QDialog, QLineEdit, QMenu,
-    QListWidget, QDialogButtonBox
+    QListWidget, QDialogButtonBox, QMessageBox
 )
 from PyQt6.QtCore import Qt, QModelIndex, QPoint, pyqtSlot
 from PyQt6.QtGui import QShortcut, QKeySequence
@@ -352,7 +352,11 @@ class EventViewer(QMainWindow):
             CommandModel._item_context(target_item),
             [ActivityLog._cmd_dict(item.command) for item, _ in self._clipboard_data],
         )
-        self.model.paste_items(self._clipboard_data, current_index)
+        try:
+            self.model.paste_items(self._clipboard_data, current_index)
+        except Exception as e:
+            QMessageBox.warning(self, "Paste Failed", str(e))
+            return
 
         # Validate tree state after paste
         is_match, discrepancies = self.compare_tree_with_script()
@@ -482,8 +486,7 @@ class EventViewer(QMainWindow):
         if not selected_rows:
             return
 
-        from editorui.commanditemmodel import _delete_batch
-        _delete_batch(self.model, selected_rows)
+        self.model.cut_items(selected_rows)
 
         is_match, discrepancies = self.compare_tree_with_script()
         if not is_match:

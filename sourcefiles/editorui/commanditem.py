@@ -125,7 +125,7 @@ def _create_command_list(commands, strings, bytes=0):
         command_bytes = len(commands[i])
         item = CommandItem(command_str, commands[i], curr_bytes)
         if commands[i].command in EventCommand.conditional_commands and commands[i].num_args > 0:
-            bytes_to_jump = commands[i].args[commands[i].num_args-1]
+            bytes_to_jump = commands[i].args[commands[i].num_args-1] - 1
             if bytes_to_jump <= 0:
                 items.append(item)
                 curr_bytes += command_bytes
