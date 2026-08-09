@@ -9,6 +9,11 @@ dependencies = [
     "PyQt6>=6.0.0"
 ]
 
+[project.optional-dependencies]
+build = [
+    "pyinstaller>=6.0"
+]
+
 [tool.pytest.ini_options]
 pythonpath = ["sourcefiles"]
 

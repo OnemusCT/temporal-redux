@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import json
+import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
 
 
 def _log_dir() -> Path:
-    """Returns the logs/ directory at the project root (two levels above sourcefiles/editorui/)."""
+    """Returns the logs/ directory next to the running application.
+
+    In a PyInstaller-frozen build, __file__ resolves inside the onefile
+    extraction tempdir, which is wiped on exit, so logs must instead live
+    next to the executable itself.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent / "logs"
     return Path(__file__).parent.parent.parent / "logs"
 
 
@@ -29,8 +37,12 @@ class ActivityLog:
         (e.g. "Object 0C > Startup / Idle") so failures can be reproduced step-by-step.
     """
 
-    def __init__(self, log_dir: Path | None = None):
+    def __init__(self, log_dir: Path | None = None, enabled: bool = False):
+        self._enabled = enabled
         self._session_id = uuid.uuid4().hex[:8]
+        self._file = None
+        if not self._enabled:
+            return
         base = log_dir if log_dir is not None else _log_dir()
         base.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -38,11 +50,9 @@ class ActivityLog:
         self._file = open(log_path, "a", encoding="utf-8")
         self._write({"event": "session_start"})
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     def _write(self, data: dict) -> None:
+        if not self._enabled:
+            return
         data["timestamp"] = datetime.now().isoformat(timespec="milliseconds")
         data["session"] = self._session_id
         self._file.write(json.dumps(data) + "\n")
@@ -54,26 +64,15 @@ class ActivityLog:
             return {}
         return {"opcode": f"0x{command.command:02X}", "args": list(command.args)}
 
-    # ------------------------------------------------------------------
-    # File / session events
-    # ------------------------------------------------------------------
-
     def log_file_open(self, path: str) -> None:
         self._write({"event": "file_open", "path": path})
 
     def log_file_save(self, path: str) -> None:
         self._write({"event": "file_save", "path": path})
 
-    # ------------------------------------------------------------------
-    # Navigation
-    # ------------------------------------------------------------------
 
     def log_location_change(self, location_id: int) -> None:
         self._write({"event": "location_change", "location": location_id})
-
-    # ------------------------------------------------------------------
-    # Command-level operations
-    # ------------------------------------------------------------------
 
     def log_command_insert(self, location_id: int, address: int,
                            command, context: str) -> None:
@@ -135,10 +134,6 @@ class ActivityLog:
             "items": items,
         })
 
-    # ------------------------------------------------------------------
-    # Validation
-    # ------------------------------------------------------------------
-
     def log_tree_discrepancy(self, location_id: int,
                              discrepancies: list[str], trigger: str = "") -> None:
         self._write({
@@ -147,10 +142,6 @@ class ActivityLog:
             "trigger": trigger,
             "discrepancies": discrepancies,
         })
-
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
 
     def close(self) -> None:
         if self._file:

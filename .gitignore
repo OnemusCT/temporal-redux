@@ -4,9 +4,12 @@ sourcefiles/location_parse.py
 sourcefiles/locations.txt
 sourcefiles/mem_location_parser.py
 sourcefiles/Memory Locations.txt
-*.smc
+*.smc*
 dist/
 build/
 *.egg-info/
 env/
 sourcefiles/dependencyfinder.py
+saves/
+logs/
+sourcefiles/tests/mapdata/*
