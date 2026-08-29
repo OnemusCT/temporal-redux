@@ -134,6 +134,13 @@ class ActivityLog:
             "items": items,
         })
 
+    def log_save_state_edit(self, location_id: int, changes: list[dict]) -> None:
+        self._write({
+            "event": "practice_save_state_edit",
+            "location": location_id,
+            "changes": changes,
+        })
+
     def log_tree_discrepancy(self, location_id: int,
                              discrepancies: list[str], trigger: str = "") -> None:
         self._write({

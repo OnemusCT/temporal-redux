@@ -26,6 +26,7 @@ from editorui.commanditem import CommandItem, process_script
 from editorui.menus.BaseCommandMenu import BaseCommandMenu
 from editorui.menus.UnassignedMenu import UnassignedMenu
 from editorui.activitylog import ActivityLog
+from editorui.unsavedchanges import UnsavedChangesChoice, prompt_unsaved_changes
 
 
 class _LinkTargetDialog(QDialog):
@@ -165,11 +166,17 @@ class EventViewer(QMainWindow):
         self._log = ActivityLog()
         self._log.log_file_open(str(rom_path))
         self.setWindowFlags(Qt.WindowType.Window)
+        # The location currently shown in the tree -- distinct from
+        # location_selector.currentData(), which by the time
+        # on_location_changed() fires already reflects the *new* selection.
+        # Used to know which location to check/save/discard on the way out.
+        self._active_location_id: Optional[int] = None
         self.setup_ui()
         self.model.set_log(self._log)
         self.on_location_changed(0)
         self._clipboard_data = None
         self._differ_window = None
+        self._practice_state_window = None
 
     def closeEvent(self, event):
         self._log.close()
@@ -187,9 +194,14 @@ class EventViewer(QMainWindow):
             backend=backend,
         )
         self._log.log_file_open(str(rom_path))
+        # A new file entirely replaces the backend any pending edits belonged
+        # to, so there's nothing left for on_location_changed() to guard.
+        self._active_location_id = None
         self.model.set_backend(backend)
         self._populate_location_selector()
         self.on_location_changed(0)
+        if self._practice_state_window is not None:
+            self._practice_state_window.set_backend(backend, rom_path)
 
     def create_menu_bar(self):
         """Create the main menu bar with File and Edit menus"""
@@ -225,6 +237,9 @@ class EventViewer(QMainWindow):
         differ_action = tools_menu.addAction("Event Differ…")
         differ_action.triggered.connect(self.on_open_differ)
 
+        practice_state_action = tools_menu.addAction("Practice Save States…")
+        practice_state_action.triggered.connect(self.on_open_practice_states)
+
     def on_open(self):
         """Handle Open menu action (SNES ROM, resources.bin, or extracted directory)"""
         path = _open_file_or_directory(self)
@@ -253,24 +268,44 @@ class EventViewer(QMainWindow):
         self._differ_window.raise_()
         self._differ_window.activateWindow()
 
+    def on_open_practice_states(self):
+        """Open the Practice Save State editor window."""
+        from editorui.practicestatewindow import PracticeSaveStateWindow
+
+        if self._practice_state_window is None:
+            self._practice_state_window = PracticeSaveStateWindow(
+                self.state.backend, self._log, self.state.file, self
+            )
+        else:
+            self._practice_state_window.set_backend(self.state.backend, self.state.file)
+        self._practice_state_window.show()
+        self._practice_state_window.raise_()
+        self._practice_state_window.activateWindow()
+
     def on_save(self):
         """Handle Save menu action"""
         if self.state.backend.is_read_only:
             print("Save not supported for this file type.")
             return
-        is_match, discrepancies = self.compare_tree_with_script()
+        self._save_location(self.location_selector.currentData())
+
+    def _save_location(self, location_id: int) -> bool:
+        """Write location_id's script into the rom and to disk. Returns
+        whether the save actually happened -- False if the tree/script
+        consistency check failed, in which case nothing was written."""
+        is_match, discrepancies = self.compare_tree_with_script(location_id)
         if not is_match:
             print("Tree discrepancies found:")
             for d in discrepancies:
                 print(f"- {d}")
             print("Save cancelled")
-            return
-        location_id = self.location_selector.currentData()
+            return False
         self.state.backend.write_script(location_id)
         self.model.change_location(location_id)
         self.tree.expandAll()
         self.state.backend.save_to_file(self.state.file)
         self._log.log_file_save(str(self.state.file))
+        return True
 
     def on_save_as(self):
         """Handle Save As menu action"""
@@ -820,12 +855,40 @@ class EventViewer(QMainWindow):
                         self.command_menu.apply_string(text)
 
 
+    def _active_location_index(self) -> int:
+        """Combo-box index of the location currently shown in the tree, which
+        is not the current index once a selection change is in flight."""
+        return self.location_selector.findData(self._active_location_id)
+
+    def _revert_location_selector_to_active(self) -> None:
+        """Undo a combo-box selection change that the user backed out of
+        (Cancel, or a failed Save), without re-entering on_location_changed."""
+        self.location_selector.blockSignals(True)
+        self.location_selector.setCurrentIndex(self._active_location_index())
+        self.location_selector.blockSignals(False)
+
     @pyqtSlot(int)
     def on_location_changed(self, index: int):
         """Handle location selection changes"""
         location_id = self.location_selector.itemData(index)
         if location_id is None:
             return
+
+        if (self._active_location_id is not None
+                and not self.state.backend.is_read_only
+                and self.state.backend.is_script_modified(self._active_location_id)):
+            active_name = self.location_selector.itemText(self._active_location_index())
+            choice = prompt_unsaved_changes(self, active_name)
+            if choice == UnsavedChangesChoice.CANCEL:
+                self._revert_location_selector_to_active()
+                return
+            if choice == UnsavedChangesChoice.SAVE:
+                if not self._save_location(self._active_location_id):
+                    self._revert_location_selector_to_active()
+                    return
+            else:  # DISCARD
+                self.state.backend.discard_script_changes(self._active_location_id)
+
         self._log.log_location_change(location_id)
         self.search_box.blockSignals(True)
         self.search_box.clear()
@@ -835,6 +898,7 @@ class EventViewer(QMainWindow):
         self.search_label.setText("0 / 0")
         self.model.change_location(location_id)
         self.tree.expandAll()
+        self._active_location_id = location_id
 
     def _on_tree_context_menu(self, pos: QPoint) -> None:
         index = self.tree.indexAt(pos)
@@ -1102,17 +1166,23 @@ class EventViewer(QMainWindow):
                 "\n".join(f"- {d}" for d in discrepancies)
             )
 
-    def compare_tree_with_script(self) -> tuple[bool, list[str]]:
+    def compare_tree_with_script(self, location_id: Optional[int] = None) -> tuple[bool, list[str]]:
         """
         Compare the current tree view state with the processed script data.
-        
+
+        location_id defaults to the location currently selected in the combo
+        box. Callers checking a location other than the one currently on screen
+        e.g. the one being navigated away from, while the combo box has already
+        moved on to the new selection
+
         Returns:
             tuple[bool, list[str]]: A tuple containing:
                 - bool: True if trees match, False otherwise
                 - list[str]: List of discrepancy descriptions if trees don't match
         """
         current_tree_root = self.model._root_item
-        location_id = self.location_selector.currentData()
+        if location_id is None:
+            location_id = self.location_selector.currentData()
 
         processed_items = process_script(self.state.backend.get_script(location_id))
 

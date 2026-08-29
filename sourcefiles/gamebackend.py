@@ -23,9 +23,28 @@ class GameBackend(ABC):
     def write_script(self, location_id: int) -> None:
         pass
 
+    def write_scripts(self, location_ids: list[int]) -> list[int]:
+        """Write several locations at once, returning any that could not be
+        written.  Backends that have to pack scripts into a limited pool of
+        free space (SNES) override this to place the whole batch together, 
+        which fits cases a location-at-a-time loop cannot."""
+        for location_id in location_ids:
+            self.write_script(location_id)
+        return []
+
     @abstractmethod
     def save_to_file(self, path: Path) -> None:
         pass
+
+    @abstractmethod
+    def is_script_modified(self, location_id: int) -> bool:
+        """Whether location_id's cached script has been edited since it was
+        loaded or last written (via write_script)."""
+
+    @abstractmethod
+    def discard_script_changes(self, location_id: int) -> None:
+        """Reload location_id's script fresh, discarding any in-memory edits
+        made since it was loaded or last written (via write_script)."""
 
     @property
     @abstractmethod
@@ -49,6 +68,7 @@ class SnesBackend(GameBackend):
     def from_path(cls, rom_path: Path, ignore_checksum: bool = True) -> SnesBackend:
         rom = CTRom(rom_path.read_bytes(), ignore_checksum)
         basepatch.mark_initial_free_space(rom)
+        basepatch.mark_actual_script_space_used(rom)
         return cls(rom)
 
     def get_script(self, location_id: int) -> ctevent.Event:
@@ -60,6 +80,15 @@ class SnesBackend(GameBackend):
 
     def write_script(self, location_id: int) -> None:
         self._ct_rom.script_manager.write_script_to_rom(location_id)
+
+    def write_scripts(self, location_ids: list[int]) -> list[int]:
+        return self._ct_rom.script_manager.write_scripts_to_rom(location_ids)
+
+    def is_script_modified(self, location_id: int) -> bool:
+        return self._ct_rom.script_manager.is_modified(location_id)
+
+    def discard_script_changes(self, location_id: int) -> None:
+        self._ct_rom.script_manager.discard_script(location_id)
 
     def save_to_file(self, path: Path) -> None:
         path.write_bytes(self._ct_rom.rom_data.getvalue())

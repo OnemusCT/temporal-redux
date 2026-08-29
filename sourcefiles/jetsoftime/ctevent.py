@@ -1,5 +1,6 @@
 from __future__ import annotations
 import enum
+import hashlib
 from pathlib import Path
 from typing import ByteString, Optional, Union, Tuple
 
@@ -11,7 +12,7 @@ from .byteops import get_value_from_bytes, to_little_endian, to_file_ptr, \
 from . import ctstrings
 from .eventcommand import EventCommand as EC, get_command, Platform
 from .eventfunction import EventFunction as EF
-from .freespace import FSRom, FSWriteType
+from .freespace import FreeSpaceError, FSRom, FSWriteType
 
 
 class FunctionID(enum.IntEnum):
@@ -38,7 +39,54 @@ class CommandNotFoundException(Exception):
     '''Raise when a find_command call fails.'''
 
 
-def get_compressed_script(rom: ByteString, event_id: int):
+class Region(enum.IntEnum):
+    """SNES destination-code-based ROM region. Values match the byte at
+    header offset 0xFFD9 (and Temporal Flux's own nRomType), not chosen
+    arbitrarily: JAPAN=0 and USA=1 are the real SNES destination codes;
+    BETA=2 is TF's own promotion of a Japan-coded ROM that also carries a
+    second marker byte (see detect_region()) identifying the CT beta build
+    rather than a retail JP ROM.
+
+    The location/event pointer tables (see EVENT_PTR_ST_BY_REGION) sit at a
+    different ROM offset in each of these three, because the US localization
+    reorganized the JP ROM's data rather than patching it in place.
+    """
+    JAPAN = 0
+    USA = 1
+    BETA = 2
+
+
+# Location event-pointer-table start, by region.
+EVENT_PTR_ST_BY_REGION: dict[Region, int] = {
+    Region.JAPAN: 0x36A000,
+    Region.USA: 0x3CF9F0,
+    Region.BETA: 0x372000,
+}
+
+# What the event-pointer-table address defaults to wherever one isn't passed
+# explicitly, preserving this module's pre-existing US-only behavior. Derived
+# from the table above rather than restated, so correcting the US entry can't
+# leave the defaults disagreeing with it.
+DEFAULT_EVENT_PTR_ST = EVENT_PTR_ST_BY_REGION[Region.USA]
+
+# SNES header offsets used to detect region on a headerless rom.
+_DESTINATION_CODE_OFFSET = 0xFFD9
+_BETA_PROBE_OFFSET = 0xFF05
+_BETA_PROBE_VALUE = 0xC7
+
+
+def detect_region(rom: ByteString) -> Region:
+    """The Region a rom's own SNES header identifies as. Any
+    destination code other than Japan's is treated as USA."""
+    destination_code = rom[_DESTINATION_CODE_OFFSET]
+    if destination_code == Region.JAPAN and rom[_BETA_PROBE_OFFSET] == _BETA_PROBE_VALUE:
+        return Region.BETA
+    if destination_code == Region.JAPAN:
+        return Region.JAPAN
+    return Region.USA
+
+
+def get_compressed_script(rom: ByteString, event_id: int) -> bytearray:
     '''
     Gets the compressed event packet for the given event_id.
 
@@ -60,19 +108,20 @@ def get_compressed_script(rom: ByteString, event_id: int):
     return get_compressed_packet(rom, event_ptr)
 
 
-def get_loc_event_ptr(rom: ByteString, loc_id: int) -> int:
-    '''Get a the address of a location's event packet.'''
+def get_loc_event_ptr(rom: ByteString, loc_id: int,
+                      event_ptr_st: int = DEFAULT_EVENT_PTR_ST) -> int:
+    '''Get a the address of a location's event packet.
+
+    `event_ptr_st` is the region-specific event-pointer-table address (see
+    EVENT_PTR_ST_BY_REGION). It defaults to the US value so existing
+    US-only callers are unaffected.'''
     # Location data begins at 0x360000.
     # Each record is 14 bytes.  Bytes 8 and 9 (0-indexed) hold an index into
     # the pointer table for event scripts.
 
     loc_data_st = 0x360000
     event_ind_st = loc_data_st + 14*loc_id + 8
-    print(hex(event_ind_st))
     loc_script_ind = get_value_from_bytes(rom[event_ind_st:event_ind_st+2])
-    print(hex(loc_script_ind))
-
-    event_ptr_st = 0x3CF9F0
 
     # Each event pointer is an absolute, 3 byte pointer
     start = event_ptr_st + 3*loc_script_ind
@@ -122,11 +171,11 @@ class Event:
         return bytearray([self.num_objects]) + self.data
 
     @staticmethod
-    def from_rom_location(rom: ByteString, loc_id: int) -> Event:
+    def from_rom_location(rom: ByteString, loc_id: int,
+                          event_ptr_st: int = DEFAULT_EVENT_PTR_ST) -> Event:
         ''' Read an event from the specified game location. '''
 
-        ptr = get_loc_event_ptr(rom, loc_id)
-        print(hex(ptr))
+        ptr = get_loc_event_ptr(rom, loc_id, event_ptr_st)
         return Event.from_rom(rom, ptr)
 
     @staticmethod
@@ -482,6 +531,34 @@ class Event:
         # function.  So our function goes to the end of the data.
         return len(self.data)
     
+    def get_all_function_bounds(self) -> list[tuple[int, int]]:
+        '''
+        (start, end) for every function of every object, indexed by
+        32*obj_id + 2*func_id order (i.e. entry 16*obj_id + func_id).
+
+        Equivalent to calling get_function_start/get_function_end for each
+        slot, but reads the pointer table once and resolves every end in a
+        single backward pass instead of re-scanning forward from each slot.
+        Callers that need every function, rather than one, should use
+        this: the per-slot version is quadratic in the table size.
+        '''
+        entry_count = self.num_objects * 16
+        starts = [
+            get_value_from_bytes(self.data[2*index:2*index+2])
+            for index in range(entry_count)
+        ]
+
+        ends = [len(self.data)] * entry_count
+        # An empty function shares its start with the next slot, so its end
+        # is whatever the next slot's end resolved to; otherwise the next
+        # slot's start is this one's end.
+        for index in range(entry_count - 2, -1, -1):
+            ends[index] = (
+                starts[index+1] if starts[index+1] != starts[index] else ends[index+1]
+            )
+
+        return list(zip(starts, ends))
+
     def get_raw_function(self, obj_id: int, func_id: int) -> bytearray:
         start = self.get_function_start(obj_id, func_id)
         end = self.get_function_end(obj_id, func_id)
@@ -1423,9 +1500,23 @@ class Event:
         return Path(Event._flux_path, *parts)
 
 
+def script_digest(script: Event) -> bytes:
+    '''
+    A short fingerprint of a script's current bytes, for detecting unsaved
+    edits (see ScriptManager.is_modified / PcBackend.is_script_modified).
+
+    A digest rather than the bytes themselves: the only question ever asked
+    of it is "same or not", and a backend that has visited every location
+    would otherwise hold a second full copy of every script for the life of
+    the process.
+    '''
+    return hashlib.blake2b(script.get_bytearray(), digest_size=16).digest()
+
+
 # Find the length of a location's event script
-def get_compressed_event_length(rom: ByteString, loc_id: int) -> int:
-    ptr = get_loc_event_ptr(rom, loc_id)
+def get_compressed_event_length(rom: ByteString, loc_id: int,
+                                event_ptr_st: int = DEFAULT_EVENT_PTR_ST) -> int:
+    ptr = get_loc_event_ptr(rom, loc_id, event_ptr_st)
     return get_compressed_length(rom, ptr)
 
 
@@ -1438,21 +1529,33 @@ class ScriptManager:
     def __init__(self, fsrom: FSRom,
                  location_list: list[LocID],
                  loc_data_ptr=0x360000,
-                 event_data_ptr=0x3CF9F0):
+                 event_data_ptr=DEFAULT_EVENT_PTR_ST):
         self.fsrom = fsrom
 
         self.script_dict: dict[LocID, Event] = {}
         self.orig_len_dict: dict[LocID, int] = {}
+        # Fingerprint of get_bytearray() at load time (or as of the last
+        # write_script_to_rom()), used to detect unsaved edits
+        self.orig_digest_dict: dict[LocID, bytes] = {}
 
         # TODO: Just read the ptr from the rom since we have it.
         self.loc_data_ptr = loc_data_ptr
         self.event_data_ptr = event_data_ptr
 
         for loc_id in location_list:
-            self.script_dict[loc_id] = \
-                Event.from_rom_location(self.fsrom.getbuffer(), loc_id)
-            self.orig_len_dict[loc_id] = \
-                get_compressed_event_length(self.fsrom.getbuffer(), loc_id)
+            self._load_location(loc_id)
+
+    def _load_location(self, loc_id: LocID) -> Event:
+        """Read loc_id's script fresh from the rom and (re)populate every
+        per-location cache from it. The single place all three are written
+        together, so they cannot drift apart."""
+        script = Event.from_rom_location(
+            self.fsrom.getbuffer(), loc_id, self.event_data_ptr)
+        self.script_dict[loc_id] = script
+        self.orig_len_dict[loc_id] = \
+            get_compressed_event_length(self.fsrom.getbuffer(), loc_id, self.event_data_ptr)
+        self.orig_digest_dict[loc_id] = script_digest(script)
+        return script
 
     # A note:  If a script obtained by get_script is edited it will edit
     # the copy in the manager.  This is how I think it should be since
@@ -1460,23 +1563,36 @@ class ScriptManager:
     # clunky.
     def get_script(self, loc_id: LocID) -> Event:
         if loc_id not in self.script_dict:
-            self.script_dict[loc_id] = \
-                Event.from_rom_location(self.fsrom.getbuffer(), loc_id)
-            self.orig_len_dict[loc_id] = \
-                get_compressed_event_length(self.fsrom.getbuffer(), loc_id)
+            return self._load_location(loc_id)
 
         return self.script_dict[loc_id]
 
     def set_script(self, script, loc_id: LocID):
         if loc_id not in self.script_dict:
-            self.orig_len_dict[loc_id] = \
-                get_compressed_event_length(self.fsrom.getbuffer(), loc_id)
+            # Caches the rom's own version first, so the incoming script
+            # correctly reads as a modification of it.
+            self._load_location(loc_id)
 
         self.script_dict[loc_id] = script
 
-    def free_script(self, loc_id: LocID):
+    def is_modified(self, loc_id: LocID) -> bool:
+        """Whether loc_id's cached script has been edited since it was
+        loaded or last written to the rom."""
+        if loc_id not in self.script_dict:
+            return False
+        return script_digest(self.script_dict[loc_id]) != self.orig_digest_dict.get(loc_id)
+
+    def discard_script(self, loc_id: LocID) -> None:
+        """Reload loc_id's script fresh from the rom, discarding any
+        in-memory edits made since it was loaded or last written."""
+        self._load_location(loc_id)
+
+    def free_script(self, loc_id: LocID) -> int:
+        """Mark loc_id's currently-compiled script free. Returns the address
+        it occupied, so write_script_to_rom() can try to reuse that exact
+        spot for the replacement rather than fragmenting space elsewhere."""
         script = self.get_script(loc_id)
-        script_ptr = get_loc_event_ptr(self.fsrom.getbuffer(), loc_id)
+        script_ptr = get_loc_event_ptr(self.fsrom.getbuffer(), loc_id, self.event_data_ptr)
         script_compr_len = self.orig_len_dict[loc_id]
 
         spaceman = self.fsrom.space_manager
@@ -1488,56 +1604,50 @@ class ScriptManager:
 
         spaceman.mark_block((script_ptr, script_ptr+script_compr_len),
                             FSWriteType.MARK_FREE)
+        return script_ptr
 
-    # writes the script to the specified locations
-    def write_script_to_rom(self, loc_id: LocID, free_old: bool = True):
-        # print('calling wstr', loc_id)
-
+    def _allocate_and_write_strings(self, script: Event) -> None:
+        """Find space for `script`'s edited strings, write them out, and
+        point the script at them."""
         spaceman = self.fsrom.space_manager
 
-        if free_old:
-            self.free_script(loc_id)
+        # We need to find space for the new strings
+        strings_len = sum(len(x) for x in script.strings)
+        ptrs_len = 2*len(script.strings)
+        total_len = strings_len + ptrs_len
 
-        script = self.get_script(loc_id)
+        # Note: fsrom doesn't let the block cross bank boundaries
+        string_index = spaceman.get_free_addr(total_len)
 
-        if script.modified_strings:
-            # We need to find space for the new strings
-            strings_len = sum(len(x) for x in script.strings)
-            ptrs_len = 2*len(script.strings)
-            total_len = strings_len + ptrs_len
+        # str_pos tracks where the pointer needs to point
+        str_pos = string_index % 0x10000 + ptrs_len
+        self.fsrom.seek(string_index)
 
-            # Note: fsrom doesn't let the block cross bank boundaries
-            string_index = spaceman.get_free_addr(total_len)
+        # Write the pointers
+        for i in range(len(script.strings)):
+            self.fsrom.write(to_little_endian(str_pos, 2),
+                             FSWriteType.MARK_USED)
+            str_pos += len(script.strings[i])
 
-            # str_pos tracks where the pointer needs to point
-            str_pos = string_index % 0x10000 + ptrs_len
-            self.fsrom.seek(string_index)
+        # Write the strings immediately afterwards
+        for x in script.strings:
+            self.fsrom.write(x, FSWriteType.MARK_USED)
 
-            # Write the pointers
-            for i in range(len(script.strings)):
-                self.fsrom.write(to_little_endian(str_pos, 2),
-                                 FSWriteType.MARK_USED)
-                str_pos += len(script.strings[i])
+        script.set_string_index(to_rom_ptr(string_index))
 
-            # Write the strings immediately afterwards
-            for x in script.strings:
-                self.fsrom.write(x, FSWriteType.MARK_USED)
-
-            script.set_string_index(to_rom_ptr(string_index))
-
-        # The rest is mostly straightforward
-        compr_event = compress(script.get_bytearray())
-        script_ptr = spaceman.get_free_addr(len(compr_event))
-
+    def _store_compiled_script(self, loc_id: LocID, compr_event: bytearray,
+                               script_ptr: int) -> None:
+        """Write an already-compressed script at `script_ptr` and repoint
+        `loc_id` at it, refreshing the bookkeeping that later edits are
+        detected against."""
         self.fsrom.seek(script_ptr)
         self.fsrom.write(compr_event, FSWriteType.MARK_USED)
 
         # Now write the location's pointer
         event_ind_st = self.loc_data_ptr + 14*loc_id + 8
 
-        loc_script_ind = \
-            get_value_from_bytes(
-                self.fsrom.getbuffer()[event_ind_st:event_ind_st+2])
+        loc_script_ind = get_value_from_bytes(
+            self.fsrom.getbuffer()[event_ind_st:event_ind_st+2])
 
         # Each event pointer is an absolute, 3 byte pointer
         loc_ptr = self.event_data_ptr + 3*loc_script_ind
@@ -1547,9 +1657,103 @@ class ScriptManager:
 
         # When the script is written, update the orig len and modified_strings.
         # Just in case we end up modifying and writing again.
+        script = self.get_script(loc_id)
         script.modified_strings = False
         self.orig_len_dict[loc_id] = len(compr_event)
-    # End of write_script_to_rom
+        self.orig_digest_dict[loc_id] = script_digest(script)
+
+    # writes the script to the specified locations
+    def write_script_to_rom(self, loc_id: LocID, free_old: bool = True):
+        # print('calling wstr', loc_id)
+
+        spaceman = self.fsrom.space_manager
+
+        freed_script_ptr = self.free_script(loc_id) if free_old else None
+
+        script = self.get_script(loc_id)
+
+        if script.modified_strings:
+            self._allocate_and_write_strings(script)
+
+        # The rest is mostly straightforward
+        compr_event = compress(script.get_bytearray())
+
+        # Prefer reusing the space this same location's own old script just
+        # vacated: an edit that doesn't grow past what was already there
+        # should never need to steal space from anywhere else, and on a ROM
+        # with little free space to begin with, always allocating fresh
+        # (ignoring the block just freed) fragments what little there is
+        # across many edits until none of it is left. get_free_addr()'s
+        # hinted search only looks forward from the hint, though, so if the
+        # freed block isn't big enough this falls back to an unhinted
+        # (from-the-start) search rather than failing outright.
+        hint = freed_script_ptr if freed_script_ptr is not None else 0
+        try:
+            script_ptr = spaceman.get_free_addr(len(compr_event), hint)
+        except FreeSpaceError:
+            if freed_script_ptr is None:
+                raise
+            script_ptr = spaceman.get_free_addr(len(compr_event))
+
+        self._store_compiled_script(loc_id, compr_event, script_ptr)
+
+    def write_scripts_to_rom(self, loc_ids: list[LocID]) -> list[LocID]:
+        """Rewrite several locations as one batch, packing them into free
+        space together rather than one at a time.  Returns the locations
+        that could not be placed (empty on success) instead of raising,
+        so a caller can report every failure at once.
+
+        Writing locations one at a time makes each take the first free block
+        big enough for it, so a run of small scripts can carve up the only
+        blocks large enough for a bigger script still waiting its turn,
+        stranding that script even when the batch as a whole shrinks.  Here
+        every location releases its old extent up front, a script that still
+        fits keeps the exact address it already had (leaving most of the rom
+        untouched), and whatever has to move gets first pick of the freed
+        space largest-first (the biggest scripts being the ones with the
+        fewest blocks able to hold them)
+
+        Freeing every old extent before placing anything is safe: each
+        location's Event is already decoded in memory, so its old rom bytes
+        are never read again.  Locations outside `loc_ids` are untouched,
+        their scripts still marked used by
+        basepatch.mark_actual_script_space_used().
+        """
+        spaceman = self.fsrom.space_manager
+
+        payloads: dict[LocID, bytearray] = {}
+        for loc_id in loc_ids:
+            script = self.get_script(loc_id)
+            if script.modified_strings:
+                self._allocate_and_write_strings(script)
+            payloads[loc_id] = compress(script.get_bytearray())
+
+        relocating: list[tuple[LocID, int]] = []
+        for loc_id in loc_ids:
+            # Read the old length before storing anything: free_script()
+            # reads orig_len_dict and _store_compiled_script() overwrites it.
+            original_length = self.orig_len_dict[loc_id]
+            original_ptr = self.free_script(loc_id)
+            if len(payloads[loc_id]) <= original_length:
+                self._store_compiled_script(loc_id, payloads[loc_id], original_ptr)
+            else:
+                relocating.append((loc_id, original_ptr))
+
+        unplaced: list[LocID] = []
+        for loc_id, original_ptr in sorted(
+                relocating, key=lambda pair: -len(payloads[pair[0]])):
+            compr_event = payloads[loc_id]
+            try:
+                script_ptr = spaceman.get_free_addr(len(compr_event), original_ptr)
+            except FreeSpaceError:
+                try:
+                    script_ptr = spaceman.get_free_addr(len(compr_event))
+                except FreeSpaceError:
+                    unplaced.append(loc_id)
+                    continue
+            self._store_compiled_script(loc_id, compr_event, script_ptr)
+
+        return unplaced
 # End class ScriptManager
 
 

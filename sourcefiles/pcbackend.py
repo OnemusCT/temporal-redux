@@ -132,6 +132,9 @@ class PcBackend(GameBackend):
     def __init__(self, path: Path):
         self._gd = GameData(str(path))
         self._script_cache: dict[int, ctevent.Event] = {}
+        # Fingerprint of get_bytearray() at load time (or as of the last
+        # write_script()), used to detect unsaved edits
+        self._orig_digest_cache: dict[int, bytes] = {}
         # scene_index -> script_index (from mapinfo header)
         self._scene_to_script: dict[int, int] = {}
         self._location_list: list[tuple[int, str]] = []
@@ -195,6 +198,7 @@ class PcBackend(GameBackend):
         event = ctevent.Event.from_pc_data(raw)
         self._attach_strings(event)
         self._script_cache[location_id] = event
+        self._orig_digest_cache[location_id] = ctevent.script_digest(event)
         return event
 
     def get_location_list(self) -> list[tuple[int, str]]:
@@ -207,6 +211,20 @@ class PcBackend(GameBackend):
         event = self._script_cache[location_id]
         vpath = f"Game/field/atel/Atel_{script_index:04d}.dat"
         self._gd.write(vpath, bytes(event.get_bytearray()))
+        self._orig_digest_cache[location_id] = ctevent.script_digest(event)
+
+    def is_script_modified(self, location_id: int) -> bool:
+        if location_id not in self._script_cache:
+            return False
+        current_digest = ctevent.script_digest(self._script_cache[location_id])
+        return current_digest != self._orig_digest_cache.get(location_id)
+
+    def discard_script_changes(self, location_id: int) -> None:
+        if location_id not in self._script_cache:
+            return
+        del self._script_cache[location_id]
+        self._orig_digest_cache.pop(location_id, None)
+        self.get_script(location_id)
 
     def save_to_file(self, path: Path) -> None:
         if self._gd.is_archive:

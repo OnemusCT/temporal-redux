@@ -94,6 +94,11 @@ def decompress(rom, start):
                 src_pos += 2
 
 
+class CorruptCompressedDataError(ValueError):
+    """Raised when data at a given address doesn't look like a genuine
+    compressed packet -- see get_compressed_length()."""
+
+
 # Find the length of a compressed packet
 def get_compressed_length(rom: ByteString, addr: int):
 
@@ -109,12 +114,25 @@ def get_compressed_length(rom: ByteString, addr: int):
 
     while rom[add_byte_addr] & 0x3F != 0:
         # print(f"Addendum byte: {rom[add_byte_addr]: 02X}")
-        compr_len = get_value_from_bytes(rom[add_byte_addr+1:add_byte_addr+3])
+        next_compr_len = get_value_from_bytes(rom[add_byte_addr+1:add_byte_addr+3])
         # print(' '.join(f"{x:02X}"
         #                 for x in rom[add_byte_addr:add_byte_addr+3]))
+
+        # Each addendum's declared total length describes strictly more of
+        # the stream than the one before it (the compressors always write
+        # out_pos+3 (see compress_py/compress_py_2 below) which only
+        # grows as a packet is filled). Address data that isn't a real
+        # compressed packet (e.g. a location pointer resolved against the
+        # wrong ROM region/offset table) has no reason to honor that, and
+        # can otherwise cycle between the same handful of addresses forever.
+        if next_compr_len <= compr_len:
+            raise CorruptCompressedDataError(
+                f"Addendum length did not increase at 0x{addr + compr_len - 1:06X} "
+                f"(0x{compr_len:04X} -> 0x{next_compr_len:04X}); not a genuine compressed packet."
+            )
+
+        compr_len = next_compr_len
         add_byte_addr = addr + compr_len
-        # Perhaps add logic here to make sure the addendum size is within
-        # reason.  There are some bad packets out there.
 
         # print(f"Compressed len = {compr_len:04X}")
     return compr_len + 1

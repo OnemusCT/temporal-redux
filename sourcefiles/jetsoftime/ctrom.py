@@ -26,8 +26,15 @@ class CTRom():
         if not ignore_checksum and not CTRom.validate_ct_rom_bytes(rom):
             raise InvalidRomException('Bad checksum.')
 
+        # The checksum above is only ever the US ROM's, and ignore_checksum
+        # is commonly set for  the ROMs that would fail it (already
+        # patched/expanded ones), so region detection cannot rely on the
+        # checksum path having run.
+        self.region = ctevent.detect_region(rom)
+        event_data_ptr = ctevent.EVENT_PTR_ST_BY_REGION[self.region]
+
         self.rom_data = freespace.FSRom(rom, False)
-        self.script_manager = ctevent.ScriptManager(self.rom_data, [])
+        self.script_manager = ctevent.ScriptManager(self.rom_data, [], event_data_ptr=event_data_ptr)
 
     @classmethod
     def from_file(cls, filename: str, ignore_checksum=False):

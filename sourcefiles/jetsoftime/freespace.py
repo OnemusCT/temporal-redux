@@ -134,45 +134,50 @@ class FreeSpace():
         ind = self.__search(0, len(self.markers)-2, hint)
 
         # print(f"Searching for {size} free bytes.")
-        if self.__is_free(ind) and (self.markers[ind+1]-hint > 0):
-            return hint
-        else:
-            if not self.__is_free(ind):
-                ind += 1
+        if self.__is_free(ind):
+            # A hint only short-circuits the search when its own
+            # block genuinely has room for `size`.
+            next_bank = (hint & 0xFF0000) + 0x010000
+            true_block_end = min(self.markers[ind+1], next_bank)
+            if true_block_end - hint >= size:
+                return hint
 
-            start = ind
-            ret = None
-            for x in range(start, len(self.markers)-1, 2):
-                # print(f"({self.markers[x]}, {self.markers[x+1]})")
-                # print(f"Size: {self.markers[x+1]-self.markers[x]}")
+        if not self.__is_free(ind):
+            ind += 1
 
-                block_st = self.markers[x]
-                block_end = self.markers[x+1]
-                next_bank = (block_st & 0xFF0000) + 0x010000
+        start = ind
+        ret = None
+        for x in range(start, len(self.markers)-1, 2):
+            # print(f"({self.markers[x]}, {self.markers[x+1]})")
+            # print(f"Size: {self.markers[x+1]-self.markers[x]}")
 
-                true_block_end = min(block_end, next_bank)
-                if true_block_end - block_st >= size:
-                    ret = block_st
-                    break
+            block_st = self.markers[x]
+            block_end = self.markers[x+1]
+            next_bank = (block_st & 0xFF0000) + 0x010000
 
-                # If the block ends before the next bank starts, then
-                # block_end == true_block_end, and this if won't trigger.
-                # Otherwise, true_block_end is the start of the next bank, and
-                # we're trying to fit at the start of the next bank.
-                if block_end - true_block_end >= size:
-                    ret = true_block_end  # == next bank start
-                    break
+            true_block_end = min(block_end, next_bank)
+            if true_block_end - block_st >= size:
+                ret = block_st
+                break
 
-            if ret is None:
-                # print("Error: Not enough free space.")
-                # print(f"size: {size:06X}, hint: {hint:06X}")
-                # self.print_blocks()
-                raise FreeSpaceError(
-                    f'Not Enough Free Space.  Size: {size:06X}, '
-                    f'hint: {hint:06X}'
-                )
+            # If the block ends before the next bank starts, then
+            # block_end == true_block_end, and this if won't trigger.
+            # Otherwise, true_block_end is the start of the next bank, and
+            # we're trying to fit at the start of the next bank.
+            if block_end - true_block_end >= size:
+                ret = true_block_end  # == next bank start
+                break
 
-            return ret
+        if ret is None:
+            # print("Error: Not enough free space.")
+            # print(f"size: {size:06X}, hint: {hint:06X}")
+            # self.print_blocks()
+            raise FreeSpaceError(
+                f'Not Enough Free Space.  Size: {size:06X}, '
+                f'hint: {hint:06X}'
+            )
+
+        return ret
 
     # Sometimes data needs the same bank, so
     def get_same_bank_free_addrs(self, sizes: list[int],

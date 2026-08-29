@@ -3,6 +3,8 @@ from typing import Optional
 from ..asm import instructions as inst, assemble
 
 from .. import byteops
+from .. import ctdecompress
+from .. import ctevent
 from .. import ctrom
 from .. import freespace
 
@@ -232,6 +234,52 @@ def mark_initial_free_space(vanilla_rom: ctrom.CTRom):
 
     for block in free_blocks:
         vanilla_rom.rom_data.space_manager.mark_block(block, MARK_FREE)
+
+
+# Total number of entries in the location data table at 0x360000 (14 bytes
+# each).
+LOCATION_COUNT = 0x200
+
+
+def mark_actual_script_space_used(rom: ctrom.CTRom, location_count: int = LOCATION_COUNT):
+    '''
+    Carve every location's currently-compiled event script out of the free
+    space pool, based on where this specific ROM's own location/event
+    pointer tables say it actually is rather than where a vanilla ROM would
+    have put it.
+
+    mark_initial_free_space() marks byte ranges that are free in a *vanilla*
+    CT ROM. A ROM that has already had extra data injected into its event
+    scripts by an earlier build step can have real, load-bearing script data
+    sitting inside those nominally-free ranges. ScriptManager.write_script_to_rom()
+    trusts the free-space pool when it allocates space for a freshly recompiled
+    script, so without this, saving an unrelated location can silently allocate
+    space on top of -- and destroy -- another location's script.
+
+    Must run after mark_initial_free_space(), so this wins any overlap.
+    Deliberately narrow in scope: it only protects event scripts, the one
+    category of ROM content this codebase itself relocates. It does not
+    attempt to identify every other kind of non-vanilla content, which isn't
+    reliably derivable from raw bytes.
+    '''
+    rom_buffer = rom.rom_data.getbuffer()
+    space_manager = rom.rom_data.space_manager
+    MARK_USED = ctrom.freespace.FSWriteType.MARK_USED
+    event_ptr_st = rom.script_manager.event_data_ptr
+
+    for loc_id in range(location_count):
+        event_ptr = ctevent.get_loc_event_ptr(rom_buffer, loc_id, event_ptr_st)
+        if event_ptr < 0 or event_ptr >= len(rom_buffer):
+            continue
+        try:
+            script_length = ctevent.get_compressed_length(rom_buffer, event_ptr)
+        except (IndexError, ctdecompress.CorruptCompressedDataError):
+            continue
+
+        if script_length <= 0 or event_ptr + script_length > len(rom_buffer):
+            continue
+
+        space_manager.mark_block((event_ptr, event_ptr + script_length), MARK_USED)
 
 
 def mark_vanilla_dialogue_free(vanilla_rom: ctrom.CTRom):
