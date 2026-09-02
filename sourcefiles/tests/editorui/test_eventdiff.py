@@ -1,4 +1,5 @@
 """Tests for the event diff engine."""
+from __future__ import annotations
 
 from jetsoftime.ctevent import Event
 from jetsoftime.eventcommand import EventCommand, Platform

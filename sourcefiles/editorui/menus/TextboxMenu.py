@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from editorui.menus.BaseCommandMenu import BaseCommandMenu
 from editorui.menus.ValidatingLineEdit import ValidatingLineEdit
 from jetsoftime.eventcommand import EventCommand

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from editorui.menus.CommandError import CommandError
 from editorui.menus.ValidatingLineEdit import ValidatingLineEdit
 from jetsoftime.eventcommand import Platform
