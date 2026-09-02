@@ -2,7 +2,7 @@ import unittest
 from PyQt6.QtCore import QModelIndex, Qt
 from editorui.commanditem import CommandItem
 from editorui.commanditemmodel import CommandModel
-from jetsoftime.eventcommand import EventCommand, FuncSync
+from jetsoftime.eventcommand import EventCommand
 from jetsoftime.ctevent import Event
 
 class _MockBackend:

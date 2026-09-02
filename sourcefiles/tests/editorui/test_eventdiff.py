@@ -1,5 +1,4 @@
 """Tests for the event diff engine."""
-import pytest
 
 from jetsoftime.ctevent import Event
 from jetsoftime.eventcommand import EventCommand, Platform

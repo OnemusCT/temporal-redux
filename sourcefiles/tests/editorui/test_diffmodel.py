@@ -1,23 +1,12 @@
 """Tests for the DiffModel Qt model."""
 import pytest
-from PyQt6.QtCore import QModelIndex, Qt
+from PyQt6.QtCore import Qt
 
 from jetsoftime.eventcommand import EventCommand, Platform
 from jetsoftime.byteops import to_little_endian
 from jetsoftime.ctevent import Event
-from editorui.eventdiff import (
-    compute_location_diff,
-    CopyEligibility,
-    DiffStatus,
-)
-from editorui.diffmodel import (
-    DiffModel,
-    DiffColumn,
-    _COLOR_EQUAL,
-    _COLOR_MODIFIED,
-    _COLOR_LEFT_ONLY,
-    _COLOR_RIGHT_ONLY,
-)
+from editorui.eventdiff import compute_location_diff, DiffStatus
+from editorui.diffmodel import DiffModel, DiffColumn, _COLOR_EQUAL, _COLOR_MODIFIED
 
 
 def _build_event(
