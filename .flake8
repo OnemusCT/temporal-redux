@@ -14,11 +14,29 @@ extend-ignore=
   ## whitespace around parens, operators, separators, keywords
   E201, E202, E222, E225, E231, E231, E241, E251, E271, E272, E275,
 
+  ## alignment padding before an operator, and annotated defaults written
+  ## without spaces (the un-annotated form, E251, is already ignored above)
+  E221, E252,
+
+  ## whitespace before a separator
+  E203,
+
   ## whitespace with comments
   E261, E262, E265,
 
   ## blank lines
   E301, E302, E303, E305, E306,
+
+  ## trailing newline at end of file, blank line at end of file
+  W292, W391,
+
+  ## several statements on one line -- used deliberately for short guard
+  ## clauses and flag-accumulating if-chains throughout editorui/ and
+  ## jetsoftime/eventcommand.py
+  E701, E702,
+
+  ## non-syntax indentation (statement indented by other than 4)
+  E111,
 
   ## trailing whitespace, blank line contains whitespace
   W291, W293,
@@ -29,6 +47,10 @@ extend-ignore=
   # Ignore other issues which may or may not care about
   ## multiple imports per line
   E401,
+
+  ## import not at top of file -- temporalredux.py and practice/apply_dumps.py
+  ## must set sys.path up before importing anything from the project
+  E402,
 
   ## ambigious variable name
   E741

@@ -1,8 +1,7 @@
 from editorui.menus.BaseCommandMenu import BaseCommandMenu
-from editorui.menus.ValidatingLineEdit import ValidatingLineEdit
 from jetsoftime.eventcommand import EventCommand
 
-from PyQt6.QtWidgets import QCheckBox, QLabel, QSpinBox, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QCheckBox, QVBoxLayout, QWidget
 
 class ShakeScreenMenu(BaseCommandMenu):
     def command_widget(self) -> QWidget:

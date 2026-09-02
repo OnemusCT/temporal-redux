@@ -3,9 +3,7 @@ from editorui.menus.MemCopyMenu import HexValidator
 from editorui.menus.ValidatingLineEdit import ValidatingLineEdit
 from jetsoftime.eventcommand import EventCommand, event_commands
 
-from PyQt6.QtWidgets import (
-    QComboBox, QFormLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
-)
+from PyQt6.QtWidgets import QComboBox, QFormLayout, QLabel, QLineEdit, QWidget
 
 
 _COLOR_NAMES = ["Black", "Blue", "Red", "Purple", "Green", "Cyan", "Yellow", "White"]

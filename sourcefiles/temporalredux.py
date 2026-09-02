@@ -791,7 +791,7 @@ class EventViewer(QMainWindow):
                     selected_commands.append(str(item.command))
                     self.state.selected_items.append(item)
                     
-            self.command_label.setText(f"Multiple commands selected:\n" + "\n".join(selected_commands))
+            self.command_label.setText("Multiple commands selected:\n" + "\n".join(selected_commands))
             return
             
         # Single selection handling

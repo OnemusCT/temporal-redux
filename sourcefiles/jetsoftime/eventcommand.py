@@ -557,18 +557,6 @@ class EventCommand:
         return EventCommand.generic_zero_arg(0xB2)
 
     @staticmethod
-    def add_gold(gold_amt: int) -> EventCommand:
-        return EventCommand.generic_command(0xCD, gold_amt)
-
-    @staticmethod
-    def add_item(item_id: int) -> EventCommand:
-        return EventCommand.generic_one_arg(0xCA, item_id)
-
-    @staticmethod
-    def remove_item(item_id: int) -> EventCommand:
-        return EventCommand.generic_command(0xCB, item_id)
-
-    @staticmethod
     def get_item_count(item_id: int, script_addr: int) -> EventCommand:
         if not is_script_mem(script_addr):
             raise ValueError('Address must be script memory.')
@@ -932,18 +920,6 @@ class EventCommand:
     @staticmethod
     def set_string_index(str_ind_rom: int) -> EventCommand:
         return EventCommand.generic_one_arg(0xB8, str_ind_rom)
-
-    @staticmethod
-    def special_dialog(dialog_id: int) -> EventCommand:
-        return EventCommand.generic_one_arg(0xC8, dialog_id)
-
-    @staticmethod
-    def rename_character(char_id: int) -> EventCommand:
-        return EventCommand.special_dialog(0xC0 | char_id)
-
-    @staticmethod
-    def replace_characters() -> EventCommand:
-        return EventCommand.special_dialog(0x00)
 
     @staticmethod
     def decision_box(str_id: int, first_line: int, last_line: int,

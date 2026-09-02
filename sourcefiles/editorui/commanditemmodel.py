@@ -2,7 +2,6 @@ from __future__ import annotations
 from PyQt6.QtCore import QAbstractItemModel, QModelIndex, Qt, QMimeData
 from PyQt6.QtGui import QBrush, QColor, QFont
 from jetsoftime.eventcommand import EventCommand
-import editorui.commandtotext as c2t
 from editorui.commanditem import CommandItem, process_script
 from editorui.activitylog import ActivityLog
 from gamebackend import GameBackend

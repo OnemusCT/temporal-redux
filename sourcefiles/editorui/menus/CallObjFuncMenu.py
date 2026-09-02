@@ -3,7 +3,7 @@ from editorui.menus.ValidatingLineEdit import ValidatingLineEdit
 from jetsoftime.eventcommand import EventCommand, FuncSync
 from editorui.lookups import pcs
 
-from PyQt6.QtWidgets import QCheckBox, QComboBox, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QComboBox, QLabel, QVBoxLayout, QWidget
 
 class CallObjFuncMenu(BaseCommandMenu):
 

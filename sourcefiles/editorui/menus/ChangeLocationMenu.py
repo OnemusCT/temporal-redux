@@ -2,7 +2,6 @@ from editorui.menus.BaseCommandMenu import BaseCommandMenu
 from editorui.menus.ValidatingLineEdit import ValidatingLineEdit
 from jetsoftime.eventcommand import EventCommand, Platform
 from PyQt6.QtWidgets import QComboBox, QLabel, QVBoxLayout, QWidget, QCheckBox, QHBoxLayout
-from PyQt6.QtCore import Qt
 
 # Import locations from lookups.py
 from editorui.lookups import locations

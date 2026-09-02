@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QTreeView, QApplication, QStyle, QStyleOptionViewItem
+from PyQt6.QtWidgets import QTreeView, QApplication
 from PyQt6.QtCore import Qt, QPoint, QRect, QModelIndex
 from PyQt6.QtGui import (QMouseEvent, QDrag, QDragMoveEvent, QDragEnterEvent, 
                         QDropEvent, QPainter, QColor, QPen)

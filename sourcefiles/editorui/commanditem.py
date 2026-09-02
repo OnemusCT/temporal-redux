@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from jetsoftime.eventcommand import EventCommand
 import editorui.commandtotext as c2t
-import jetsoftime.ctevent
+from jetsoftime import ctevent
 
 
 class CommandItem:

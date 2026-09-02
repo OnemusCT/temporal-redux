@@ -1,10 +1,9 @@
 from editorui.menus.BaseCommandMenu import BaseCommandMenu
 from editorui.menus.ValidatingLineEdit import ValidatingLineEdit
-from jetsoftime.eventcommand import EventCommand, event_commands
+from jetsoftime.eventcommand import EventCommand
 
 from PyQt6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget
 from PyQt6.QtGui import QValidator
-from PyQt6.QtCore import Qt
 
 class HexValidator(QValidator):
     """Validator for hex input that requires even number of characters."""
