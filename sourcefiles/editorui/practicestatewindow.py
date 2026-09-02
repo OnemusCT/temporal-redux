@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
 
 from editorui.inventoryeditor import InventoryEditorWidget
 from editorui.unsavedchanges import UnsavedChangesChoice, prompt_unsaved_changes
-from practice.derivedfielddefs import ALL_FIELD_DEFS
+from practice.memorylocationdefs import MEMORY_FIELD_DEFS
 from practice.fields import (
     FieldKind, ResolvedField, apply_field_value, merge_consecutive_raw_fields,
     resolve_displayable_and_disabled_fields,
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from gamebackend import GameBackend
 
 _LOCATION_ITEM_ROLE = Qt.ItemDataRole.UserRole
-_ADDRESS_INDEX = build_address_index(ALL_FIELD_DEFS)
+_ADDRESS_INDEX = build_address_index(MEMORY_FIELD_DEFS)
 
 
 class PracticeSaveStateWindow(QMainWindow):
@@ -52,7 +52,6 @@ class PracticeSaveStateWindow(QMainWindow):
         # Identifies the save state on screen: a location can hold more than
         # one, so a bare location id is ambiguous.
         self._current_key: Optional[SaveStateKey] = None
-        self._current_fields: list[ResolvedField] = []
         self._current_disabled_fields: list[ResolvedField] = []
         self._field_widgets: list[tuple[ResolvedField, object]] = []
 
@@ -223,7 +222,6 @@ class PracticeSaveStateWindow(QMainWindow):
 
         resolved_fields, disabled_fields = resolve_displayable_and_disabled_fields(
             save_state, self._address_index)
-        self._current_fields = resolved_fields
         self._current_disabled_fields = disabled_fields
         self._rebuild_field_panel(resolved_fields)
 
@@ -244,7 +242,6 @@ class PracticeSaveStateWindow(QMainWindow):
         return f"  slot {guard_value}"
 
     def _clear_field_panel(self) -> None:
-        self._current_fields = []
         self._current_disabled_fields = []
         self._location_title_label.setText("Select a location on the left.")
         self._save_button.setEnabled(False)
