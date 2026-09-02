@@ -9,13 +9,6 @@ One byte is protected even when a Mem Copy's range happens to include it:
 the practice-hack guard flag (scanner.PRACTICE_FLAG_ADDRESS), since writing
 whatever the dump captured there could disable the guard this location's
 own state-restore block depends on.
-
-Fields marked disabled in memorylocationdefs.py are deliberately *not*
-protected. That flag only hides a field from the interactive editor (see
-fields.resolve_displayable_and_disabled_fields()), where the risk is a user
-hand-editing a value into an inconsistent state. A dump is a coherent
-capture of real machine state, so where it has a byte for one of those
-addresses, that byte is exactly what belongs there.
 """
 from __future__ import annotations
 

@@ -58,9 +58,7 @@ def is_stackable(item_id: int) -> bool:
 
 def decode_slots(item_bytes: bytes, quantity_bytes: bytes) -> list[InventorySlot]:
     """Every occupied slot within the real-slot region, in array order, with
-    empty slots dropped -- so a save state with a gap (an occupied slot
-    after an empty one) reads back already compacted, matching how the
-    in-game list -- which stops at the first empty slot -- would show it."""
+    empty slots dropped"""
     slot_count = real_slot_count(item_bytes)
     slots: list[InventorySlot] = []
     for index in range(slot_count):
@@ -78,9 +76,7 @@ def encode_slots(
         quantity_bytes: bytes,
 ) -> tuple[bytes, bytes]:
     """The inverse of decode_slots(): re-packs `slots` starting at index 0 of
-    the real-slot region, zero-fills the rest of that region, and preserves
-    `item_bytes`/`quantity_bytes` unchanged past REAL_SLOT_COUNT (the
-    documented padding -- never a slot, so never touched here)."""
+    the real-slot region, zero-fills the rest of that region."""
     slot_count = real_slot_count(item_bytes)
     if len(slots) > slot_count:
         raise ValueError(f"{len(slots)} slot(s) do not fit in {slot_count} available slot(s)")

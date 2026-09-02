@@ -167,7 +167,7 @@ def _find_inventory_command_offsets(
 
 
 def _resolve_inventory_command(command_offset: int, command: EventCommand, kind: FieldKind) -> ResolvedField:
-    """The whole Mem Copy as one field -- unlike the generic per-byte path,
+    """The whole Mem Copy as one field. Unlike the generic per-byte path,
     this never splits it into NUMERIC/RAW pieces, since InventoryEditorWidget
     (see editorui/inventoryeditor.py) interprets the whole span as one
     array of slots."""
